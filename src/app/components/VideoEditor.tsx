@@ -1,15 +1,16 @@
 import { useState, useRef, useEffect } from "react";
+import { LayoutGrid } from "lucide-react";
 import svgPaths from "@/imports/svg-mbvhuxpq3m";
 import image1 from "../../assets/4ade86ef9dac706bb3957bd6282d330df1e57c89.png";
 import image2 from "../../assets/c4945bd878c904a44e42b756d4a58bd0d542132d.png";
 import image3 from "../../assets/7633c3f223e4bc39f692ecfd0b163fb92cb5ad4e.png";
 import image4 from "../../assets/fdac420adeb4e37cb6c0fc58ae2eaac15892ec6c.png";
 
-export function VideoEditor({ completedCuts }: { completedCuts: number[] }) {
+export function VideoEditor({ completedCuts, onToggleNodeView }: { completedCuts: number[]; onToggleNodeView?: () => void }) {
   return (
     <div className="flex h-full items-stretch gap-3 p-3 overflow-hidden">
       <ChatPanel />
-      <VideoPreview completedCuts={completedCuts} />
+      <VideoPreview completedCuts={completedCuts} onToggleNodeView={onToggleNodeView} />
     </div>
   );
 }
@@ -233,7 +234,7 @@ function ChatPanel() {
   );
 }
 
-function VideoPreview({ completedCuts }: { completedCuts: number[] }) {
+function VideoPreview({ completedCuts, onToggleNodeView }: { completedCuts: number[]; onToggleNodeView?: () => void }) {
   let currentImage = image1;
   const cutCount = completedCuts.length;
 
@@ -319,6 +320,13 @@ function VideoPreview({ completedCuts }: { completedCuts: number[] }) {
             title="Screen"
           >
             <ScreenIcon />
+          </button>
+          <button
+            onClick={onToggleNodeView}
+            className="text-[#bcbcbe] hover:text-white transition-colors cursor-pointer"
+            title="Effects"
+          >
+            <LayoutGrid className="size-[18px]" />
           </button>
           <button
             className="text-[#bdbdbf] hover:text-white transition-colors cursor-pointer"

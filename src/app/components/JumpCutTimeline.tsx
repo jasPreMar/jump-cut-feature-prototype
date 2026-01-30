@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useLayoutEffect } from 'react';
+import { motion } from 'motion/react';
 import svgPaths from "@/imports/svg-mbvhuxpq3m";
 import scissorsSvgPaths from "@/imports/svg-6x4m2z1e2j";
 
@@ -272,8 +273,9 @@ export function JumpCutTimeline({ onCutsChange }: { onCutsChange: (cuts: number[
           const isNextCutClip = showPreview && currentCut?.clipIndex === index - 1;
           
           return (
-            <VideoClip 
+            <VideoClip
               key={clip.id}
+              clipId={clip.id}
               left={clip.left}
               width={clip.width}
               title={clip.title}
@@ -357,6 +359,7 @@ function TimelineTick() {
 }
 
 interface VideoClipProps {
+  clipId: number;
   left: number;
   width: number;
   title: string;
@@ -367,7 +370,7 @@ interface VideoClipProps {
   startCutPosition?: number;
 }
 
-function VideoClip({ left, width, title, color, showEndCutPreview, endCutPosition, showStartCutPreview, startCutPosition }: VideoClipProps) {
+function VideoClip({ clipId, left, width, title, color, showEndCutPreview, endCutPosition, showStartCutPreview, startCutPosition }: VideoClipProps) {
   const colors = {
     blue: { bg: '#1c77e9', border: '#6298ec' },
     purple: { bg: '#564aac', border: '#9287e2' },
@@ -379,13 +382,15 @@ function VideoClip({ left, width, title, color, showEndCutPreview, endCutPositio
 
   return (
     <>
-      <div 
-        className="absolute bottom-[107px] h-[36px]" 
-        style={{ 
-          left: `${left}px`, 
+      <motion.div
+        layoutId={`clip-${clipId}`}
+        className="absolute bottom-[107px] h-[36px]"
+        style={{
+          left: `${left}px`,
           width: `${width}px`,
-          backgroundColor: bg 
+          backgroundColor: bg
         }}
+        transition={{ duration: 1, ease: [0.42, 0, 0.58, 1] }}
       >
         <div className="content-stretch flex gap-[7px] items-center overflow-clip px-[9px] py-[3px] relative size-full">
           <div className="content-stretch flex flex-[1_0_0] gap-[5px] items-center min-h-px min-w-px relative">
@@ -443,7 +448,7 @@ function VideoClip({ left, width, title, color, showEndCutPreview, endCutPositio
             />
           </>
         )}
-      </div>
+      </motion.div>
     </>
   );
 }

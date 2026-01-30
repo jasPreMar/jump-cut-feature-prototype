@@ -1,18 +1,50 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
+import { motion, LayoutGroup } from "motion/react";
 import { VideoEditor } from "@/app/components/VideoEditor";
 import { JumpCutTimeline } from "@/app/components/JumpCutTimeline";
+import { NodeCanvas } from "@/app/components/NodeCanvas";
+import type { EffectBlock } from "@/app/types/nodeEffects";
+
+const sheetTransition = { duration: 1, ease: [0.42, 0, 0.58, 1] };
 
 export default function App() {
   const [completedCuts, setCompletedCuts] = useState<number[]>([]);
+  const [isNodeViewOpen, setIsNodeViewOpen] = useState(false);
+  const [effectChains, setEffectChains] = useState<Record<number, EffectBlock[]>>({});
+
+  const handleToggleNodeView = useCallback(() => {
+    setIsNodeViewOpen((prev) => !prev);
+  }, []);
+
+  const handleCloseNodeView = useCallback(() => {
+    setIsNodeViewOpen(false);
+  }, []);
 
   return (
-    <div className="bg-[#0e1015] flex flex-col h-screen w-full overflow-hidden">
-      <div className="flex-1 min-h-0">
-        <VideoEditor completedCuts={completedCuts} />
+    <LayoutGroup>
+      <div className="bg-[#0e1015] flex flex-col h-screen w-full overflow-hidden">
+        <div className="flex-1 min-h-0">
+          <VideoEditor
+            completedCuts={completedCuts}
+            onToggleNodeView={handleToggleNodeView}
+          />
+        </div>
+        <motion.div
+          className="shrink-0 relative w-full overflow-hidden"
+          animate={{ height: isNodeViewOpen ? "100dvh" : 200 }}
+          transition={sheetTransition}
+        >
+          {isNodeViewOpen ? (
+            <NodeCanvas
+              onClose={handleCloseNodeView}
+              effectChains={effectChains}
+              onEffectChainsChange={setEffectChains}
+            />
+          ) : (
+            <JumpCutTimeline onCutsChange={setCompletedCuts} />
+          )}
+        </motion.div>
       </div>
-      <div className="h-[200px] shrink-0 relative w-full overflow-y-clip">
-        <JumpCutTimeline onCutsChange={setCompletedCuts} />
-      </div>
-    </div>
+    </LayoutGroup>
   );
 }
