@@ -1,12 +1,9 @@
 import { useState } from "react";
 import { motion } from "motion/react";
 import {
-  Palette,
-  Gauge,
-  Droplets,
-  ArrowRightLeft,
-  Maximize2,
-  Anchor,
+  Type,
+  ImageIcon,
+  Film,
   Send,
   Trash2,
 } from "lucide-react";
@@ -14,12 +11,9 @@ import { cn } from "@/app/components/ui/utils";
 import { EFFECT_FILTERS } from "@/app/types/nodeEffects";
 
 const ICON_MAP: Record<string, React.ReactNode> = {
-  "Color Grade": <Palette className="size-4" />,
-  "Speed Ramp": <Gauge className="size-4" />,
-  "Blur": <Droplets className="size-4" />,
-  "Transition": <ArrowRightLeft className="size-4" />,
-  "Crop & Zoom": <Maximize2 className="size-4" />,
-  "Stabilize": <Anchor className="size-4" />,
+  "Text": <Type className="size-4" />,
+  "Image": <ImageIcon className="size-4" />,
+  "Video": <Film className="size-4" />,
 };
 
 interface EffectBlockProps {

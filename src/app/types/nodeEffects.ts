@@ -7,32 +7,23 @@ export interface EffectBlock {
 }
 
 export const EFFECT_TYPES = [
-  "Color Grade",
-  "Speed Ramp",
-  "Blur",
-  "Transition",
-  "Crop & Zoom",
-  "Stabilize",
+  "Text",
+  "Image",
+  "Video",
 ] as const;
 
 export type EffectType = (typeof EFFECT_TYPES)[number];
 
 export const EFFECT_FILTERS: Record<string, string> = {
-  "Color Grade": "saturate(1.4) contrast(1.1) sepia(0.15)",
-  "Speed Ramp": "brightness(1.1) blur(1px)",
-  "Blur": "blur(4px)",
-  "Transition": "opacity(0.7) brightness(1.3)",
-  "Crop & Zoom": "none",
-  "Stabilize": "contrast(1.05)",
+  "Text": "none",
+  "Image": "none",
+  "Video": "none",
 };
 
 export const EFFECT_ICONS: Record<string, string> = {
-  "Color Grade": "Palette",
-  "Speed Ramp": "Gauge",
-  "Blur": "Droplets",
-  "Transition": "ArrowRightLeft",
-  "Crop & Zoom": "Maximize2",
-  "Stabilize": "Anchor",
+  "Text": "Type",
+  "Image": "ImageIcon",
+  "Video": "Film",
 };
 
 export const CLIP_COLORS: Record<string, { accent: string; border: string }> = {

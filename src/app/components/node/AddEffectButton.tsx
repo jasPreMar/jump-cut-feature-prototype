@@ -1,4 +1,4 @@
-import { Plus, Palette, Gauge, Droplets, ArrowRightLeft, Maximize2, Anchor } from "lucide-react";
+import { Plus, Type, ImageIcon, Film } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -8,12 +8,9 @@ import {
 import { EFFECT_TYPES } from "@/app/types/nodeEffects";
 
 const ICON_MAP: Record<string, React.ReactNode> = {
-  "Color Grade": <Palette className="size-4" />,
-  "Speed Ramp": <Gauge className="size-4" />,
-  "Blur": <Droplets className="size-4" />,
-  "Transition": <ArrowRightLeft className="size-4" />,
-  "Crop & Zoom": <Maximize2 className="size-4" />,
-  "Stabilize": <Anchor className="size-4" />,
+  "Text": <Type className="size-4" />,
+  "Image": <ImageIcon className="size-4" />,
+  "Video": <Film className="size-4" />,
 };
 
 interface AddEffectButtonProps {

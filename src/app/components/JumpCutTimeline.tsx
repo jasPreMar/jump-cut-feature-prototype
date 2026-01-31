@@ -382,73 +382,77 @@ function VideoClip({ clipId, left, width, title, color, showEndCutPreview, endCu
 
   return (
     <>
-      <motion.div
-        layoutId={`clip-${clipId}`}
+      <div
         className="absolute bottom-[107px] h-[36px]"
         style={{
           left: `${left}px`,
           width: `${width}px`,
-          backgroundColor: bg
         }}
-        transition={{ duration: 1, ease: [0.42, 0, 0.58, 1] }}
       >
-        <div className="content-stretch flex gap-[7px] items-center overflow-clip px-[9px] py-[3px] relative size-full">
-          <div className="content-stretch flex flex-[1_0_0] gap-[5px] items-center min-h-px min-w-px relative">
-            <div className="h-[14px] relative shrink-0 w-[18px]">
-              <svg className="block size-full" fill="none" preserveAspectRatio="none" viewBox="0 0 18 14">
-                <path d={svgPaths.pf137a80} fill="#93BCFC" />
-                <path d={svgPaths.p251fcf80} fill="#93BCFC" />
-              </svg>
+        <motion.div
+          layoutId={`clip-${clipId}`}
+          className="size-full"
+          style={{ backgroundColor: bg }}
+          transition={{ layout: { duration: 0 } }}
+        >
+          <div className="content-stretch flex gap-[7px] items-center overflow-clip px-[9px] py-[3px] relative size-full">
+            <div className="content-stretch flex flex-[1_0_0] gap-[5px] items-center min-h-px min-w-px relative">
+              <div className="h-[14px] relative shrink-0 w-[18px]">
+                <svg className="block size-full" fill="none" preserveAspectRatio="none" viewBox="0 0 18 14">
+                  <path d={svgPaths.pf137a80} fill="#93BCFC" />
+                  <path d={svgPaths.p251fcf80} fill="#93BCFC" />
+                </svg>
+              </div>
+              <p className="flex-[1_0_0] font-['Inter:Medium',sans-serif] font-medium leading-[18px] min-h-px min-w-px not-italic opacity-80 overflow-hidden relative text-[14px] text-ellipsis text-white tracking-[-0.14px] whitespace-nowrap">
+                {title}
+              </p>
             </div>
-            <p className="flex-[1_0_0] font-['Inter:Medium',sans-serif] font-medium leading-[18px] min-h-px min-w-px not-italic opacity-80 overflow-hidden relative text-[14px] text-ellipsis text-white tracking-[-0.14px] whitespace-nowrap">
-              {title}
-            </p>
           </div>
-        </div>
-        <div className="absolute border border-solid inset-0 pointer-events-none" style={{ borderColor: border, borderWidth: '0.5px' }} />
-        
-        {/* Preview: Dashed line and ghosted cut-off section */}
-        {showEndCutPreview && endCutPosition && (
-          <>
-            {/* Dashed cut line */}
-            <div 
-              className="absolute bottom-0 top-0 w-[2px]"
-              style={{ 
-                left: `${endCutPosition}px`,
-                background: 'repeating-linear-gradient(to bottom, #fff 0px, #fff 4px, transparent 4px, transparent 8px)'
-              }}
-            />
-            {/* Ghosted section to be cut */}
-            <div 
-              className="absolute bottom-0 top-0 bg-black/40"
-              style={{ 
-                left: `${endCutPosition}px`,
-                right: 0
-              }}
-            />
-          </>
-        )}
-        {showStartCutPreview && startCutPosition && (
-          <>
-            {/* Dashed cut line */}
-            <div 
-              className="absolute bottom-0 top-0 w-[2px]"
-              style={{ 
-                left: `${startCutPosition}px`,
-                background: 'repeating-linear-gradient(to bottom, #fff 0px, #fff 4px, transparent 4px, transparent 8px)'
-              }}
-            />
-            {/* Ghosted section to be cut */}
-            <div 
-              className="absolute bottom-0 top-0 bg-black/40"
-              style={{ 
-                left: 0,
-                width: `${startCutPosition}px`
-              }}
-            />
-          </>
-        )}
-      </motion.div>
+          <div className="absolute border border-solid inset-0 pointer-events-none" style={{ borderColor: border, borderWidth: '0.5px' }} />
+
+          {/* Preview: Dashed line and ghosted cut-off section */}
+          {showEndCutPreview && endCutPosition && (
+            <>
+              {/* Dashed cut line */}
+              <div
+                className="absolute bottom-0 top-0 w-[2px]"
+                style={{
+                  left: `${endCutPosition}px`,
+                  background: 'repeating-linear-gradient(to bottom, #fff 0px, #fff 4px, transparent 4px, transparent 8px)'
+                }}
+              />
+              {/* Ghosted section to be cut */}
+              <div
+                className="absolute bottom-0 top-0 bg-black/40"
+                style={{
+                  left: `${endCutPosition}px`,
+                  right: 0
+                }}
+              />
+            </>
+          )}
+          {showStartCutPreview && startCutPosition && (
+            <>
+              {/* Dashed cut line */}
+              <div
+                className="absolute bottom-0 top-0 w-[2px]"
+                style={{
+                  left: `${startCutPosition}px`,
+                  background: 'repeating-linear-gradient(to bottom, #fff 0px, #fff 4px, transparent 4px, transparent 8px)'
+                }}
+              />
+              {/* Ghosted section to be cut */}
+              <div
+                className="absolute bottom-0 top-0 bg-black/40"
+                style={{
+                  left: 0,
+                  width: `${startCutPosition}px`
+                }}
+              />
+            </>
+          )}
+        </motion.div>
+      </div>
     </>
   );
 }

@@ -31,6 +31,7 @@ export default function App() {
         </div>
         <motion.div
           className="shrink-0 relative w-full overflow-hidden"
+          initial={{ height: 200 }}
           animate={{ height: isNodeViewOpen ? "100dvh" : 200 }}
           transition={sheetTransition}
         >
