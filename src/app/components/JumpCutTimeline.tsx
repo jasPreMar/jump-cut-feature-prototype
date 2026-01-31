@@ -6,7 +6,7 @@ import scissorsSvgPaths from "@/imports/svg-6x4m2z1e2j";
 interface Clip {
   id: number;
   title: string;
-  color: 'blue' | 'purple' | 'green' | 'orange';
+  color: 'blue' | 'purple' | 'green' | 'orange' | 'teal';
   originalWidth: number;
   transcript: string;
 }
@@ -49,15 +49,16 @@ export function JumpCutTimeline({ onCutsChange, playheadPosition, onPlayheadChan
 
   // Define clips with base configuration
   const baseClips: Clip[] = [
-    { id: 0, title: "Introducing Log Explorer", color: "blue", originalWidth: 2500, transcript: "Log explorer lets you query logs, traces and sessions from all your apps in one place. You can search by any attribute, filter by severity level, and correlate logs with traces to debug issues faster than ever before." },
+    { id: 0, title: "Introducing Log Explorer", color: "blue", originalWidth: 210, transcript: "Log explorer lets you query logs, traces and sessions from all your apps in one place. You can search by any attribute, filter by severity level, and correlate logs with traces to debug issues faster than ever before." },
     { id: 1, title: "Google Chrome Log Explorer Demo", color: "purple", originalWidth: 550, transcript: "Let's take a look at how this works in Google Chrome. First, we'll open the Log Explorer and search for shopping cart events." },
     { id: 2, title: "Analytics Dashboard", color: "green", originalWidth: 700, transcript: "Then we can switch to the analytics dashboard to see the heatmap visualizations and explore the data patterns across our entire monitoring infrastructure." },
     { id: 3, title: "User Engagement Metrics", color: "orange", originalWidth: 500, transcript: "Here we can see the full user engagement metrics, results across the totality of data streams and monitoring endpoints across all platforms." },
+    { id: 4, title: "Summary & Next Steps", color: "teal", originalWidth: 450, transcript: "We can explore the data patterns across our entire monitoring infrastructure and plan next steps for your team." },
   ];
 
   // Define 3 jump cut predictions
   const jumpCuts: JumpCut[] = [
-    { id: 1, clipIndex: 0, endCutPosition: 2200, nextClipStartPosition: 120 },
+    { id: 1, clipIndex: 0, endCutPosition: 190, nextClipStartPosition: 120 },
     { id: 2, clipIndex: 1, endCutPosition: 320, nextClipStartPosition: 150 },
     { id: 3, clipIndex: 2, endCutPosition: 250, nextClipStartPosition: 180 },
   ];
@@ -273,11 +274,11 @@ export function JumpCutTimeline({ onCutsChange, playheadPosition, onPlayheadChan
         <div className="absolute bg-[#201f22] border border-[#282829] border-solid bottom-[107px] h-[36px] left-[16px] right-[16px]" />
         <div className="absolute bg-[#201f22] border border-[#282829] border-solid bottom-[65px] h-[36px] left-[16px] right-[16px]" />
         
-        {/* Video clips */}
+        {/* Video clips: 1st, 3rd, 5th on top reel; 2nd, 4th on middle reel */}
         {clips.map((clip, index) => {
           const isCurrentCutClip = showPreview && currentCut?.clipIndex === index;
           const isNextCutClip = showPreview && currentCut?.clipIndex === index - 1;
-          
+          const reel = index % 2;
           return (
             <VideoClip
               key={clip.id}
@@ -291,6 +292,7 @@ export function JumpCutTimeline({ onCutsChange, playheadPosition, onPlayheadChan
               showStartCutPreview={isNextCutClip}
               startCutPosition={isNextCutClip ? currentCut.nextClipStartPosition : undefined}
               isNodeViewOpen={isNodeViewOpen}
+              reel={reel}
             />
           );
         })}
@@ -370,31 +372,35 @@ interface VideoClipProps {
   left: number;
   width: number;
   title: string;
-  color: 'blue' | 'purple' | 'green' | 'orange';
+  color: 'blue' | 'purple' | 'green' | 'orange' | 'teal';
   showEndCutPreview?: boolean;
   endCutPosition?: number;
   showStartCutPreview?: boolean;
   startCutPosition?: number;
   isNodeViewOpen?: boolean;
+  reel?: number; // 0 = top track, 1 = middle track
 }
 
-function VideoClip({ clipId, left, width, title, color, showEndCutPreview, endCutPosition, showStartCutPreview, startCutPosition, isNodeViewOpen = false }: VideoClipProps) {
+function VideoClip({ clipId, left, width, title, color, showEndCutPreview, endCutPosition, showStartCutPreview, startCutPosition, isNodeViewOpen = false, reel = 0 }: VideoClipProps) {
   const colors = {
     blue: { bg: '#1c77e9', border: '#6298ec' },
     purple: { bg: '#564aac', border: '#9287e2' },
     green: { bg: '#2d8659', border: '#5fb885' },
     orange: { bg: '#d97706', border: '#fbbf24' },
+    teal: { bg: '#0d9488', border: '#5eead4' },
   };
 
   const { bg, border } = colors[color];
 
+  const bottom = reel === 1 ? 65 : 107;
   return (
     <>
       <div
-        className="absolute bottom-[107px] h-[36px]"
+        className="absolute h-[36px]"
         style={{
           left: `${left}px`,
           width: `${width}px`,
+          bottom: `${bottom}px`,
         }}
       >
         <motion.div
@@ -679,36 +685,40 @@ function ScriptSegment({ left, width, text, hoveredPosition }: { left: number; w
     }
   }, [width]);
 
-  // Measure actual word positions and set transform imperatively
+  // Position highlighted word just to the right of the ghost playhead
+  const contentPadding = 8; // px-2 on the inner div
   useLayoutEffect(() => {
     const scrollEl = scrollRef.current;
     const containerEl = containerRef.current;
-    if (!scrollEl || !containerEl || hoveredWordIndex < 0) {
+    if (!scrollEl || !containerEl || hoveredWordIndex < 0 || hoveredPosition === null) {
       if (scrollEl) scrollEl.style.transform = 'translateX(0)';
       return;
     }
 
-    const padding = 16;
-    const available = containerEl.clientWidth - padding;
+    const available = containerEl.clientWidth - contentPadding * 2;
     const contentWidth = scrollEl.scrollWidth;
 
-    // If all words fit, no scrolling needed
-    if (contentWidth <= available) {
-      scrollEl.style.transform = 'translateX(0)';
-      return;
-    }
-
-    // Measure the highlighted word's actual position
+    // If all words fit, position word to the right of playhead (no scroll)
     const wordEl = wordEls.current.get(hoveredWordIndex);
     if (!wordEl) return;
 
-    const wordCenter = wordEl.offsetLeft + wordEl.offsetWidth / 2;
-    const target = available / 2 - wordCenter;
-    const minTranslate = -(contentWidth - available);
-    const clamped = Math.max(minTranslate, Math.min(0, target));
+    // Ghost playhead position in segment-local coords; content area starts at contentPadding
+    const playheadInContent = hoveredPosition - left - contentPadding;
+    const gap = 6; // space between playhead and highlighted word
+    const targetWordLeft = playheadInContent + gap;
 
-    scrollEl.style.transform = `translateX(${clamped}px)`;
-  }, [hoveredWordIndex]);
+    let target: number;
+    if (contentWidth <= available) {
+      target = 0;
+    } else {
+      // translateX so the word's left edge is at targetWordLeft in the visible area
+      target = targetWordLeft - wordEl.offsetLeft;
+      const minTranslate = -(contentWidth - available);
+      target = Math.max(minTranslate, Math.min(0, target));
+    }
+
+    scrollEl.style.transform = `translateX(${target}px)`;
+  }, [hoveredWordIndex, hoveredPosition, left]);
 
   // Center-ellipsis text for non-hovered state
   const centerEllipsisText = useMemo(() => {
@@ -732,10 +742,10 @@ function ScriptSegment({ left, width, text, hoveredPosition }: { left: number; w
   return (
     <div
       ref={containerRef}
-      className="absolute bottom-[24px] h-[34px] overflow-hidden"
+      className="absolute bottom-[24px] h-[34px] overflow-hidden rounded border border-[#353535] bg-[#2a2a2e]"
       style={{ left: `${left}px`, width: `${width}px` }}
     >
-      <div className="flex items-center h-full px-2 overflow-hidden">
+      <div className="flex items-center h-full px-2 overflow-hidden rounded-[inherit]">
         {showWords ? (
           <div
             ref={scrollRef}

@@ -7,7 +7,7 @@ import { CLIP_COLORS } from "@/app/types/nodeEffects";
 interface ClipBlockProps {
   clipId: number;
   title: string;
-  color: "blue" | "purple" | "green" | "orange";
+  color: "blue" | "purple" | "green" | "orange" | "teal";
   imageSrc: string;
   onHover?: (hovered: boolean) => void;
   isHovered?: boolean;

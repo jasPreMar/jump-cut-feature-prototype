@@ -19,14 +19,16 @@ import image1 from "../../assets/4ade86ef9dac706bb3957bd6282d330df1e57c89.png";
 import image2 from "../../assets/c4945bd878c904a44e42b756d4a58bd0d542132d.png";
 import image3 from "../../assets/7633c3f223e4bc39f692ecfd0b163fb92cb5ad4e.png";
 import image4 from "../../assets/fdac420adeb4e37cb6c0fc58ae2eaac15892ec6c.png";
+import image5 from "../../assets/3b60bf79536904eac8e068b551ee0f317c3a107f.png";
 
-const CLIP_IMAGES = [image1, image2, image3, image4];
+const CLIP_IMAGES = [image1, image2, image3, image4, image5];
 
 const CLIPS = [
   { id: 0, title: "Introducing Log Explorer", color: "blue" as const },
   { id: 1, title: "Google Chrome Log Explorer Demo", color: "purple" as const },
   { id: 2, title: "Analytics Dashboard", color: "green" as const },
   { id: 3, title: "User Engagement Metrics", color: "orange" as const },
+  { id: 4, title: "Summary & Next Steps", color: "teal" as const },
 ];
 
 const NODE_WIDTH = 320;
