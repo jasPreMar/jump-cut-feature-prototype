@@ -1,57 +1,33 @@
-import { cn } from "@/app/components/ui/utils";
-
-interface ConnectionLineProps {
+interface CanvasConnectionProps {
+  from: { x: number; y: number };
+  to: { x: number; y: number };
+  isActive?: boolean;
   isHovered?: boolean;
 }
 
-export function ConnectionLine({ isHovered = false }: ConnectionLineProps) {
+export function CanvasConnection({
+  from,
+  to,
+  isActive = false,
+  isHovered = false,
+}: CanvasConnectionProps) {
+  const dy = to.y - from.y;
+  const controlOffset = Math.min(Math.abs(dy) * 0.5, 120);
+
+  const d = `M ${from.x} ${from.y} C ${from.x} ${from.y + controlOffset}, ${to.x} ${to.y - controlOffset}, ${to.x} ${to.y}`;
+
+  const strokeColor = isHovered || isActive ? "#6298ec" : "#3a3a3a";
+
   return (
-    <div className="flex justify-center w-[320px] h-[48px]">
-      <svg
-        width="24"
-        height="48"
-        viewBox="0 0 24 48"
-        fill="none"
-        className="overflow-visible"
-      >
-        {/* Top port circle */}
-        <circle
-          cx="12"
-          cy="4"
-          r="4"
-          className={cn(
-            "transition-colors duration-200",
-            isHovered ? "fill-[#6298ec]" : "fill-[#3a3a3a]"
-          )}
-          stroke={isHovered ? "#6298ec" : "#4a4a4a"}
-          strokeWidth="1.5"
-        />
-
-        {/* Curved connector */}
-        <path
-          d="M12 8 C12 20, 12 28, 12 40"
-          className={cn(
-            "transition-colors duration-200",
-            isHovered ? "stroke-[#6298ec]" : "stroke-[#3a3a3a]"
-          )}
-          strokeWidth="2"
-          strokeLinecap="round"
-          fill="none"
-        />
-
-        {/* Bottom port circle */}
-        <circle
-          cx="12"
-          cy="44"
-          r="4"
-          className={cn(
-            "transition-colors duration-200",
-            isHovered ? "fill-[#6298ec]" : "fill-[#3a3a3a]"
-          )}
-          stroke={isHovered ? "#6298ec" : "#4a4a4a"}
-          strokeWidth="1.5"
-        />
-      </svg>
-    </div>
+    <path
+      d={d}
+      stroke={strokeColor}
+      strokeWidth={2}
+      strokeLinecap="round"
+      fill="none"
+      strokeDasharray={isActive ? "6 4" : "none"}
+      opacity={isActive ? 0.6 : 1}
+      style={{ transition: isActive ? "none" : "stroke 200ms, opacity 200ms" }}
+    />
   );
 }

@@ -61,7 +61,6 @@ export function EffectBlock({
       initial={{ opacity: 0, y: -8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.25 }}
-      layout
     >
       {/* Header with effect type */}
       <div className="flex items-center justify-between px-4 py-2.5">

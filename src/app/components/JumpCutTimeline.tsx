@@ -18,14 +18,20 @@ interface JumpCut {
   nextClipStartPosition: number;
 }
 
-export function JumpCutTimeline({ onCutsChange }: { onCutsChange: (cuts: number[]) => void }) {
+interface JumpCutTimelineProps {
+  onCutsChange: (cuts: number[]) => void;
+  playheadPosition: number;
+  onPlayheadChange: (position: number) => void;
+  isNodeViewOpen?: boolean;
+}
+
+export function JumpCutTimeline({ onCutsChange, playheadPosition, onPlayheadChange, isNodeViewOpen = false }: JumpCutTimelineProps) {
   const [currentCutIndex, setCurrentCutIndex] = useState(0);
   const [showPreview, setShowPreview] = useState(false);
   const [completedCuts, setCompletedCuts] = useState<number[]>([]);
   const [customCutPositions, setCustomCutPositions] = useState<Record<number, number>>({});
   const [clipStartPositions, setClipStartPositions] = useState<Record<number, number>>({});
   const [hoveredPosition, setHoveredPosition] = useState<number | null>(null);
-  const [playheadPosition, setPlayheadPosition] = useState(13);
   const [scrollLeft, setScrollLeft] = useState(0);
   const [manualSplits, setManualSplits] = useState<number[]>([]);
   const [history, setHistory] = useState<Array<{
@@ -284,6 +290,7 @@ export function JumpCutTimeline({ onCutsChange }: { onCutsChange: (cuts: number[
               endCutPosition={isCurrentCutClip ? currentCut.endCutPosition : undefined}
               showStartCutPreview={isNextCutClip}
               startCutPosition={isNextCutClip ? currentCut.nextClipStartPosition : undefined}
+              isNodeViewOpen={isNodeViewOpen}
             />
           );
         })}
@@ -306,7 +313,7 @@ export function JumpCutTimeline({ onCutsChange }: { onCutsChange: (cuts: number[
             if (!timelineRef.current) return;
             const timelineRect = timelineRef.current.getBoundingClientRect();
             const x = e.clientX - timelineRect.left;
-            setHoveredPosition(Math.floor(x / 11) * 11 + 13);
+            setHoveredPosition(Math.floor(x / 11) * 11 + 5);
           }}
           onMouseLeave={() => setHoveredPosition(null)}
         />
@@ -368,9 +375,10 @@ interface VideoClipProps {
   endCutPosition?: number;
   showStartCutPreview?: boolean;
   startCutPosition?: number;
+  isNodeViewOpen?: boolean;
 }
 
-function VideoClip({ clipId, left, width, title, color, showEndCutPreview, endCutPosition, showStartCutPreview, startCutPosition }: VideoClipProps) {
+function VideoClip({ clipId, left, width, title, color, showEndCutPreview, endCutPosition, showStartCutPreview, startCutPosition, isNodeViewOpen = false }: VideoClipProps) {
   const colors = {
     blue: { bg: '#1c77e9', border: '#6298ec' },
     purple: { bg: '#564aac', border: '#9287e2' },
@@ -393,7 +401,7 @@ function VideoClip({ clipId, left, width, title, color, showEndCutPreview, endCu
           layoutId={`clip-${clipId}`}
           className="size-full"
           style={{ backgroundColor: bg }}
-          transition={{ layout: { duration: 0 } }}
+          transition={{ layout: { duration: isNodeViewOpen ? 1 : 0 } }}
         >
           <div className="content-stretch flex gap-[7px] items-center overflow-clip px-[9px] py-[3px] relative size-full">
             <div className="content-stretch flex flex-[1_0_0] gap-[5px] items-center min-h-px min-w-px relative">

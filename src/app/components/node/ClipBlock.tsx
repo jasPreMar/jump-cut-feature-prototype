@@ -6,21 +6,21 @@ import { CLIP_COLORS } from "@/app/types/nodeEffects";
 
 interface ClipBlockProps {
   clipId: number;
-  layoutId?: string;
   title: string;
   color: "blue" | "purple" | "green" | "orange";
   imageSrc: string;
   onHover?: (hovered: boolean) => void;
   isHovered?: boolean;
+  layoutId?: string;
 }
 
 export function ClipBlock({
-  layoutId,
   title,
   color,
   imageSrc,
   onHover,
   isHovered = false,
+  layoutId,
 }: ClipBlockProps) {
   const [localHovered, setLocalHovered] = useState(false);
   const hovered = isHovered || localHovered;
@@ -41,8 +41,6 @@ export function ClipBlock({
         setLocalHovered(false);
         onHover?.(false);
       }}
-      layout
-      transition={{ duration: 1, ease: [0.42, 0, 0.58, 1] }}
     >
       {/* Color accent bar */}
       <div

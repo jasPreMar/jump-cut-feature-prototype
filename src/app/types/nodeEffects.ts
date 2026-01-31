@@ -32,3 +32,32 @@ export const CLIP_COLORS: Record<string, { accent: string; border: string }> = {
   green: { accent: "#2d8659", border: "#5fb885" },
   orange: { accent: "#d97706", border: "#fbbf24" },
 };
+
+// --- Graph types for drag-to-connect canvas ---
+
+export interface NodePosition {
+  x: number;
+  y: number;
+}
+
+export interface CanvasNode {
+  id: string;
+  type: "clip" | "effect";
+  position: NodePosition;
+  clipId?: number;
+  effectType?: string;
+  prompt?: string;
+  color?: "blue" | "purple" | "green" | "orange";
+  title?: string;
+}
+
+export interface Connection {
+  id: string;
+  sourceNodeId: string;
+  targetNodeId: string;
+}
+
+export interface NodeGraph {
+  nodes: Record<string, CanvasNode>;
+  connections: Connection[];
+}
