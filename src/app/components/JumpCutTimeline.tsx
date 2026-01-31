@@ -742,26 +742,43 @@ function ScriptSegment({ left, width, text, hoveredPosition }: { left: number; w
             className="flex items-center gap-[0.35em] whitespace-nowrap"
             style={{ transition: 'transform 120ms ease-out' }}
           >
-            {words.map((word, i) => (
-              <span
-                key={i}
-                ref={(el) => {
-                  if (el) wordEls.current.set(i, el);
-                  else wordEls.current.delete(i);
-                }}
-                style={{
-                  fontFamily: 'Inter, sans-serif',
-                  fontSize: '13px',
-                  fontStyle: 'italic',
-                  color: i === hoveredWordIndex ? '#f5c542' : '#999',
-                  opacity: i === hoveredWordIndex ? 1 : 0.5,
-                  fontWeight: i === hoveredWordIndex ? 600 : 400,
-                  transition: 'color 100ms, opacity 100ms',
-                }}
-              >
-                {word}
-              </span>
-            ))}
+            {words.map((word, i) => {
+              const isHighlighted = i === hoveredWordIndex;
+              const setRef = (el: HTMLSpanElement | null) => {
+                if (el) wordEls.current.set(i, el);
+                else wordEls.current.delete(i);
+              };
+              const wordContent = (
+                <span
+                  style={{
+                    fontFamily: 'Inter, sans-serif',
+                    fontSize: '13px',
+                    color: isHighlighted ? '#fff' : '#888',
+                    fontWeight: isHighlighted ? 500 : 400,
+                    transition: 'color 100ms',
+                  }}
+                >
+                  {word}
+                </span>
+              );
+              return isHighlighted ? (
+                <span
+                  key={i}
+                  ref={setRef}
+                  className="rounded px-1.5 py-0.5 border transition-colors"
+                  style={{
+                    backgroundColor: '#1f1f1f',
+                    borderColor: '#353535',
+                  }}
+                >
+                  {wordContent}
+                </span>
+              ) : (
+                <span key={i} ref={setRef}>
+                  {wordContent}
+                </span>
+              );
+            })}
           </div>
         ) : (
           <p
@@ -769,7 +786,6 @@ function ScriptSegment({ left, width, text, hoveredPosition }: { left: number; w
             style={{
               fontFamily: 'Inter, sans-serif',
               fontSize: '13px',
-              fontStyle: 'italic',
               color: '#999',
             }}
           >
