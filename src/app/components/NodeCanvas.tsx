@@ -16,6 +16,7 @@ import type {
 } from "@/app/types/nodeEffects";
 
 import { VIDEO_SOURCES } from "@/app/constants/videos";
+import generatedPreviewImage from "@/assets/generated-preview.png";
 const CLIPS = [
   { id: 0, title: "Clip 1", color: "blue" as const },
   { id: 1, title: "Clip 2", color: "purple" as const },
@@ -99,6 +100,7 @@ function buildGraphFromChains(
         effectType: effect.effectType,
         prompt: effect.prompt,
         isNewEffect: existingEffect?.isNewEffect,
+        generatedImageUrl: existingEffect?.generatedImageUrl,
       };
 
       connections.push({
@@ -185,6 +187,7 @@ export function NodeCanvas({
   const canvasRef = useRef<HTMLDivElement>(null);
   const portRegistry = useRef<PortRegistry>(new Map()).current;
   const nodeRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const generationTimeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   // Re-derive graph when effectChains change from outside, preserving existing positions
   useEffect(() => {
@@ -486,6 +489,12 @@ export function NodeCanvas({
   const handlePromptChange = useCallback(
     (_clipId: number, effectId: string, prompt: string) => {
       const nodeId = `effect-${effectId}`;
+      // Clear any existing timeout for this node
+      const existing = generationTimeoutsRef.current[nodeId];
+      if (existing) {
+        clearTimeout(existing);
+        delete generationTimeoutsRef.current[nodeId];
+      }
       setGraph((prev) => {
         const next = {
           ...prev,
@@ -497,9 +506,37 @@ export function NodeCanvas({
         onEffectChainsChange(syncGraphToChains(next));
         return next;
       });
+      // After ~3 pulses (2s each), show the generated image
+      const timeoutId = setTimeout(() => {
+        setGraph((prev) => {
+          const next = {
+            ...prev,
+            nodes: {
+              ...prev.nodes,
+              [nodeId]: {
+                ...prev.nodes[nodeId],
+                isNewEffect: false,
+                generatedImageUrl: generatedPreviewImage,
+              },
+            },
+          };
+          onEffectChainsChange(syncGraphToChains(next));
+          return next;
+        });
+        delete generationTimeoutsRef.current[nodeId];
+      }, 6000);
+      generationTimeoutsRef.current[nodeId] = timeoutId;
     },
     [onEffectChainsChange]
   );
+
+  // Clear generation timeouts on unmount
+  useEffect(() => {
+    return () => {
+      Object.values(generationTimeoutsRef.current).forEach(clearTimeout);
+      generationTimeoutsRef.current = {};
+    };
+  }, []);
 
   // Compute connection line endpoints from measured positions
   const connectionLines = useMemo(() => {
@@ -809,6 +846,7 @@ export function NodeCanvas({
                       setHoveredBlockId(h ? node.id : null)
                     }
                     isGenerating={node.isNewEffect}
+                    generatedImageUrl={node.generatedImageUrl}
                   />
                 </div>
 

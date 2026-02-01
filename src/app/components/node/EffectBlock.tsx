@@ -8,7 +8,6 @@ import {
   Trash2,
 } from "lucide-react";
 import { cn } from "@/app/components/ui/utils";
-import { EFFECT_FILTERS } from "@/app/types/nodeEffects";
 
 const ICON_MAP: Record<string, React.ReactNode> = {
   "Text": <Type className="size-4" />,
@@ -20,29 +19,29 @@ interface EffectBlockProps {
   id: string;
   effectType: string;
   prompt: string;
-  imageSrc: string;
   onPromptChange: (id: string, prompt: string) => void;
   onRemove: (id: string) => void;
   onHover?: (hovered: boolean) => void;
   isHovered?: boolean;
+  isGenerating?: boolean;
+  /** URL of generated result image shown after generating finishes */
+  generatedImageUrl?: string;
 }
 
 export function EffectBlock({
   id,
   effectType,
   prompt,
-  imageSrc,
   onPromptChange,
   onRemove,
   onHover,
   isHovered = false,
+  isGenerating = false,
+  generatedImageUrl,
 }: EffectBlockProps) {
   const [localHovered, setLocalHovered] = useState(false);
   const [localPrompt, setLocalPrompt] = useState(prompt);
   const hovered = isHovered || localHovered;
-
-  const filterStyle = EFFECT_FILTERS[effectType] || "none";
-  const isZoom = effectType === "Crop & Zoom";
 
   return (
     <motion.div
@@ -76,17 +75,25 @@ export function EffectBlock({
         </button>
       </div>
 
-      {/* Preview with CSS filter applied */}
+      {/* Preview: pulsing (generating), then generated image, else empty */}
       <div className="mx-3 mb-2 rounded-lg overflow-hidden aspect-video bg-[#111]">
-        <img
-          src={imageSrc}
-          alt={effectType}
-          className="w-full h-full object-cover transition-all duration-300"
-          style={{
-            filter: isZoom ? "none" : filterStyle,
-            transform: isZoom ? "scale(1.3)" : "none",
-          }}
-        />
+        {isGenerating ? (
+          <div
+            className="w-full h-full rounded-lg"
+            style={{
+              animation: "subtle-pulse 2s ease-in-out infinite",
+              background: "#2a2a2a",
+            }}
+          />
+        ) : generatedImageUrl ? (
+          <img
+            src={generatedImageUrl}
+            alt="Generated"
+            className="w-full h-full object-cover rounded-lg"
+          />
+        ) : (
+          <div className="w-full h-full bg-[#2a2a2a] rounded-lg" />
+        )}
       </div>
 
       {/* Prompt input */}

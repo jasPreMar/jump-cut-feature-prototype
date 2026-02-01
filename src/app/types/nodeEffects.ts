@@ -43,13 +43,16 @@ export interface NodePosition {
 
 export interface CanvasNode {
   id: string;
-  type: "clip" | "effect";
+  type: "clip" | "text" | "output" | "effect";
   position: NodePosition;
   clipId?: number;
   effectType?: string;
   prompt?: string;
   color?: "blue" | "purple" | "green" | "orange" | "teal";
   title?: string;
+  isNewEffect?: boolean;
+  /** URL for generated result (e.g. image) shown after "generating" finishes */
+  generatedImageUrl?: string;
 }
 
 export interface Connection {
