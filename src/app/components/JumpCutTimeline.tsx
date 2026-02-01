@@ -61,6 +61,16 @@ export function JumpCutTimeline({ onCutsChange, durations, clipTrimStart, clipTr
   const [historyIndex, setHistoryIndex] = useState(0);
   const timelineRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const applyCurrentCutRef = useRef<() => void>(() => {});
+
+  // Cut transition: split → fade removed (150ms) → collapse gap (150ms) → apply cut
+  const [cutTransition, setCutTransition] = useState<{
+    left: number;
+    right: number;
+    clipIndex: number;
+    phase: 'fade' | 'collapse';
+  } | null>(null);
+  const cutTransitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Define clips with base configuration (originalWidth kept for jump-cut proportions)
   const baseClips: Clip[] = [
@@ -290,8 +300,12 @@ export function JumpCutTimeline({ onCutsChange, durations, clipTrimStart, clipTr
     
     // If cut is already on screen, first Tab does the cut; otherwise first Tab jumps, second Tab cuts
     if (cutIsOnScreen) {
-      // Cut is visible: Tab applies the cut directly
-      applyCurrentCut();
+      // Cut is visible: start transition then apply cut
+      if (cutBoundaryPositions) {
+        setCutTransition({ left: cutBoundaryPositions.left, right: cutBoundaryPositions.right, clipIndex: currentCut!.clipIndex, phase: 'fade' });
+      } else {
+        applyCurrentCut();
+      }
       return;
     }
     if (!showPreview) {
@@ -307,7 +321,11 @@ export function JumpCutTimeline({ onCutsChange, durations, clipTrimStart, clipTr
       return;
     }
     // Second Tab (cut was off screen, we jumped, now cut)
-    applyCurrentCut();
+    if (cutBoundaryPositions) {
+      setCutTransition({ left: cutBoundaryPositions.left, right: cutBoundaryPositions.right, clipIndex: currentCut!.clipIndex, phase: 'fade' });
+    } else {
+      applyCurrentCut();
+    }
   };
 
   const applyCurrentCut = () => {
@@ -351,6 +369,29 @@ export function JumpCutTimeline({ onCutsChange, durations, clipTrimStart, clipTr
     onCutsChange(newCompletedCuts);
     setShowPreview(false);
   };
+
+  // Keep ref updated so transition timeout can call it
+  applyCurrentCutRef.current = applyCurrentCut;
+
+  // Cut transition timers: 150ms fade, then 150ms collapse, then apply cut
+  useEffect(() => {
+    if (!cutTransition) return;
+    if (cutTransitionTimeoutRef.current) clearTimeout(cutTransitionTimeoutRef.current);
+    if (cutTransition.phase === 'fade') {
+      cutTransitionTimeoutRef.current = setTimeout(() => {
+        setCutTransition((prev) => prev ? { ...prev, phase: 'collapse' } : null);
+      }, 150);
+    } else {
+      cutTransitionTimeoutRef.current = setTimeout(() => {
+        applyCurrentCutRef.current();
+        setCutTransition(null);
+        setShowPreview(false);
+      }, 150);
+    }
+    return () => {
+      if (cutTransitionTimeoutRef.current) clearTimeout(cutTransitionTimeoutRef.current);
+    };
+  }, [cutTransition]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -476,30 +517,149 @@ export function JumpCutTimeline({ onCutsChange, durations, clipTrimStart, clipTr
         <div className="absolute bg-[#201f22] border border-[#282829] border-solid bottom-[107px] h-[36px] left-[16px] right-[16px]" />
         <div className="absolute bg-[#201f22] border border-[#282829] border-solid bottom-[65px] h-[36px] left-[16px] right-[16px]" />
         
-        {/* Video clips: 1st, 3rd, 5th on top reel; 2nd, 4th on middle reel */}
-        {clips.map((clip, index) => {
-          const reel = index % 2;
+        {/* Video clips: 1st, 3rd, 5th on top reel; 2nd, 4th on middle reel (or split segments during cut transition) */}
+        {cutTransition ? (() => {
+          const ci = cutTransition.clipIndex;
+          const nextIdx = ci + 1;
+          const clip0 = clips[ci] as { id: number; left: number; width: number; title: string; color: Clip['color']; fullWidth?: number };
+          const clip1 = clips[nextIdx] as { id: number; left: number; width: number; title: string; color: Clip['color']; fullWidth?: number } | undefined;
+          if (!clip1) return null;
+          const fullW0 = clip0.fullWidth ?? clip0.width;
+          const fullW1 = clip1.fullWidth ?? clip1.width;
+          const SLICE_GAP_PX = 2;
+          const keep0Left = clip0.left;
+          const keep0Width = cutTransition.left - clip0.left;
+          const remove0Left = cutTransition.left + SLICE_GAP_PX;
+          const remove0Width = clip0.left + fullW0 - cutTransition.left - SLICE_GAP_PX;
+          const remove1Left = clip1.left;
+          const remove1Width = cutTransition.right - clip1.left - SLICE_GAP_PX;
+          const keep1Left = cutTransition.right + SLICE_GAP_PX;
+          const keep1Width = clip1.left + fullW1 - cutTransition.right - SLICE_GAP_PX;
+          const collapseTargetLeft = keep0Left + keep0Width + GAP;
           return (
-            <VideoClip
-              key={clip.id}
-              clipId={clip.id}
-              left={clip.left}
-              width={clip.width}
-              title={clip.title}
-              color={clip.color}
-              isNodeViewOpen={isNodeViewOpen}
-              reel={reel}
-            />
+            <>
+              {clips.map((clip, index) => {
+                if (index === ci || index === nextIdx) return null;
+                const reel = index % 2;
+                return (
+                  <VideoClip
+                    key={clip.id}
+                    clipId={clip.id}
+                    left={clip.left}
+                    width={clip.width}
+                    title={clip.title}
+                    color={clip.color}
+                    isNodeViewOpen={isNodeViewOpen}
+                    reel={reel}
+                  />
+                );
+              })}
+              {/* Step 1: Slice in two – visible gap between keep and remove */}
+              <VideoClipSegment left={keep0Left} width={keep0Width} title={clip0.title} color={clip0.color} reel={ci % 2} key="v-keep0" />
+              <motion.div
+                key="v-remove0"
+                initial={{ opacity: 1 }}
+                animate={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+                style={{ position: 'absolute', bottom: 0, height: '184px', pointerEvents: 'none' }}
+              >
+                <VideoClipSegment left={remove0Left} width={remove0Width} title={clip0.title} color={clip0.color} reel={ci % 2} />
+              </motion.div>
+              <motion.div
+                key="v-remove1"
+                initial={{ opacity: 1 }}
+                animate={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+                style={{ position: 'absolute', bottom: 0, height: '184px', pointerEvents: 'none' }}
+              >
+                <VideoClipSegment left={remove1Left} width={remove1Width} title={clip1.title} color={clip1.color} reel={nextIdx % 2} />
+              </motion.div>
+              <motion.div
+                key="v-keep1"
+                initial={{ left: keep1Left }}
+                animate={{ left: cutTransition.phase === 'collapse' ? collapseTargetLeft : keep1Left }}
+                transition={{ duration: 0.15 }}
+                style={{ position: 'absolute', bottom: 0, height: '184px', pointerEvents: 'none' }}
+              >
+                <VideoClipSegment left={0} width={keep1Width} title={clip1.title} color={clip1.color} reel={nextIdx % 2} />
+              </motion.div>
+            </>
           );
-        })}
+        })() : (
+          clips.map((clip, index) => {
+            const reel = index % 2;
+            return (
+              <VideoClip
+                key={clip.id}
+                clipId={clip.id}
+                left={clip.left}
+                width={clip.width}
+                title={clip.title}
+                color={clip.color}
+                isNodeViewOpen={isNodeViewOpen}
+                reel={reel}
+              />
+            );
+          })
+        )}
         
-        {/* Script/dialogue track (video clips with words) – highlight word at hover or at cut lines when cut phase active */}
+        {/* Script/dialogue track – split into 4 segments during cut transition (same 1–2–3 flow as video tracks) */}
         <ScriptTrack
           clips={clips}
           hoveredPosition={hoveredPosition}
           cutPreviews={[]}
-          cutHighlightPositions={timelineClickedOnce && showCutPhase && cutBoundaryPositions ? { left: cutBoundaryPositions.left, right: cutBoundaryPositions.right } : null}
+          cutHighlightPositions={timelineClickedOnce && showCutPhase && cutBoundaryPositions && !cutTransition ? { left: cutBoundaryPositions.left, right: cutBoundaryPositions.right } : null}
+          cutTransition={cutTransition}
         />
+        {/* Script track split segments during cut transition: keep0, remove0 (fade), remove1 (fade), keep1 (collapse) */}
+        {cutTransition && (() => {
+          const ci = cutTransition.clipIndex;
+          const nextIdx = ci + 1;
+          const clip0 = clips[ci] as { left: number; fullWidth?: number; width: number };
+          const clip1 = clips[nextIdx] as { left: number; fullWidth?: number; width: number } | undefined;
+          if (!clip1) return null;
+          const fullW0 = clip0.fullWidth ?? clip0.width;
+          const fullW1 = clip1.fullWidth ?? clip1.width;
+          const SLICE_GAP_PX = 2;
+          const keep0Left = clip0.left;
+          const keep0Width = cutTransition.left - clip0.left;
+          const remove0Left = cutTransition.left + SLICE_GAP_PX;
+          const remove0Width = clip0.left + fullW0 - cutTransition.left - SLICE_GAP_PX;
+          const remove1Left = clip1.left;
+          const remove1Width = cutTransition.right - clip1.left - SLICE_GAP_PX;
+          const keep1Left = cutTransition.right + SLICE_GAP_PX;
+          const keep1Width = clip1.left + fullW1 - cutTransition.right - SLICE_GAP_PX;
+          const collapseTargetLeft = keep0Left + keep0Width + GAP;
+          return (
+            <>
+              <ScriptTrackSegmentBlock left={keep0Left} width={keep0Width} />
+              <motion.div
+                initial={{ opacity: 1 }}
+                animate={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+                style={{ position: 'absolute', bottom: 0, height: '184px', pointerEvents: 'none' }}
+              >
+                <ScriptTrackSegmentBlock left={remove0Left} width={remove0Width} />
+              </motion.div>
+              <motion.div
+                initial={{ opacity: 1 }}
+                animate={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+                style={{ position: 'absolute', bottom: 0, height: '184px', pointerEvents: 'none' }}
+              >
+                <ScriptTrackSegmentBlock left={remove1Left} width={remove1Width} />
+              </motion.div>
+              <motion.div
+                initial={{ left: keep1Left }}
+                animate={{ left: cutTransition.phase === 'collapse' ? collapseTargetLeft : keep1Left }}
+                transition={{ duration: 0.15 }}
+                style={{ position: 'absolute', bottom: 0, height: '184px', pointerEvents: 'none' }}
+              >
+                <ScriptTrackSegmentBlock left={0} width={keep1Width} />
+              </motion.div>
+            </>
+          );
+        })()}
         
         {/* Playhead */}
         <Playhead position={playheadPosition} />
@@ -509,22 +669,26 @@ export function JumpCutTimeline({ onCutsChange, durations, clipTrimStart, clipTr
           <Playhead position={hoveredPosition} ghost />
         )}
 
-        {/* Cut preview: darkened strip between cut boundaries + two dashed ghost playheads (all tracks) */}
-        {timelineClickedOnce && showCutPhase && cutBoundaryPositions && (
-          <>
-            <div
-              className="absolute bottom-0 pointer-events-none z-10"
-              style={{
-                left: `${cutBoundaryPositions.left}px`,
-                width: `${cutBoundaryPositions.right - cutBoundaryPositions.left}px`,
-                height: '184px',
-                backgroundColor: 'rgba(0,0,0,0.4)'
-              }}
-            />
-            <DashedGhostPlayhead position={cutBoundaryPositions.left} />
-            <DashedGhostPlayhead position={cutBoundaryPositions.right} />
-          </>
-        )}
+        {/* Cut preview: darkened strip + dashed lines (during preview or cut transition phase 'fade') */}
+        {((timelineClickedOnce && showCutPhase && cutBoundaryPositions) || (cutTransition && cutTransition.phase === 'fade')) && (() => {
+          const left = cutTransition ? cutTransition.left : cutBoundaryPositions!.left;
+          const right = cutTransition ? cutTransition.right : cutBoundaryPositions!.right;
+          return (
+            <>
+              <div
+                className="absolute bottom-0 pointer-events-none z-10"
+                style={{
+                  left: `${left}px`,
+                  width: `${right - left}px`,
+                  height: '184px',
+                  backgroundColor: 'rgba(0,0,0,0.4)'
+                }}
+              />
+              <DashedGhostPlayhead position={left} />
+              <DashedGhostPlayhead position={right} />
+            </>
+          );
+        })()}
         
         {/* Hover detection zones + click to seek (content coords = scrollLeft + viewport x) */}
         <div 
@@ -544,8 +708,8 @@ export function JumpCutTimeline({ onCutsChange, durations, clipTrimStart, clipTr
         />
       </div>
       
-      {/* Jump cut indicator - only after first timeline click; fixed position when out of view */}
-      {timelineClickedOnce && !isComplete && currentCutPosition && scrollContainerRef.current && (
+      {/* Jump cut indicator - only after first timeline click; hidden during cut transition */}
+      {timelineClickedOnce && !isComplete && !cutTransition && currentCutPosition && scrollContainerRef.current && (
         <JumpCutIndicator 
           position={currentCutPosition}
           scrollLeft={scrollLeft}
@@ -666,6 +830,42 @@ function VideoClip({ clipId, left, width, title, color, isNodeViewOpen = false, 
         </motion.div>
       </div>
     </>
+  );
+}
+
+/** Segment of a clip for cut transition (same look as VideoClip, fixed left/width) */
+function VideoClipSegment({ left, width, title, color, reel }: { left: number; width: number; title: string; color: VideoClipProps['color']; reel: number }) {
+  const colors = {
+    blue: { bg: '#1c77e9', border: '#6298ec' },
+    purple: { bg: '#564aac', border: '#9287e2' },
+    green: { bg: '#2d8659', border: '#5fb885' },
+    orange: { bg: '#d97706', border: '#fbbf24' },
+    teal: { bg: '#0d9488', border: '#5eead4' },
+  };
+  const { bg, border } = colors[color];
+  const bottom = reel === 1 ? 65 : 107;
+  return (
+    <div
+      className="absolute h-[36px]"
+      style={{ left: `${left}px`, width: `${width}px`, bottom: `${bottom}px` }}
+    >
+      <div className="size-full" style={{ backgroundColor: bg }}>
+        <div className="content-stretch flex gap-[7px] items-center overflow-clip px-[9px] py-[3px] relative size-full">
+          <div className="content-stretch flex flex-[1_0_0] gap-[5px] items-center min-h-px min-w-px relative">
+            <div className="h-[14px] relative shrink-0 w-[18px]">
+              <svg className="block size-full" fill="none" preserveAspectRatio="none" viewBox="0 0 18 14">
+                <path d={svgPaths.pf137a80} fill="#93BCFC" />
+                <path d={svgPaths.p251fcf80} fill="#93BCFC" />
+              </svg>
+            </div>
+            <p className="flex-[1_0_0] font-['Inter:Medium',sans-serif] font-medium leading-[18px] min-h-px min-w-px not-italic opacity-80 overflow-hidden relative text-[14px] text-ellipsis text-white tracking-[-0.14px] whitespace-nowrap">
+              {title}
+            </p>
+          </div>
+        </div>
+        <div className="absolute border border-solid inset-0 pointer-events-none" style={{ borderColor: border, borderWidth: '0.5px' }} />
+      </div>
+    </div>
   );
 }
 
@@ -811,7 +1011,7 @@ interface CutPreview {
   startCutPosition?: number;
 }
 
-function ScriptTrack({ clips, hoveredPosition, cutPreviews, cutHighlightPositions }: { clips: ClipWithLayout[]; hoveredPosition: number | null; cutPreviews: CutPreview[]; cutHighlightPositions: { left: number; right: number } | null }) {
+function ScriptTrack({ clips, hoveredPosition, cutPreviews, cutHighlightPositions, cutTransition }: { clips: ClipWithLayout[]; hoveredPosition: number | null; cutPreviews: CutPreview[]; cutHighlightPositions: { left: number; right: number } | null; cutTransition: { left: number; right: number; clipIndex: number; phase: string } | null }) {
   return (
     <>
       {/* Track background */}
@@ -819,11 +1019,11 @@ function ScriptTrack({ clips, hoveredPosition, cutPreviews, cutHighlightPosition
         <div className="absolute border border-[#2a2a2e] border-solid inset-[-0.5px] pointer-events-none" />
       </div>
 
-      {/* Transcript segments – highlight word at hover (takes over) or at cut lines when cut phase active */}
+      {/* Transcript segments – hide the two affected when cut transition shows split script blocks instead */}
       {clips.map((clip, index) => {
+        if (cutTransition && (index === cutTransition.clipIndex || index === cutTransition.clipIndex + 1)) return null;
         const segmentLeft = clip.left;
         const segmentRight = clip.left + clip.width;
-        // Hover takes over when active; else show cut-line highlights when cut phase is on
         const highlightPosition =
           hoveredPosition !== null && hoveredPosition >= segmentLeft && hoveredPosition < segmentRight
             ? hoveredPosition
@@ -847,6 +1047,16 @@ function ScriptTrack({ clips, hoveredPosition, cutPreviews, cutHighlightPosition
         );
       })}
     </>
+  );
+}
+
+/** Grey block for script track during cut transition (same styling as script segment, no text). */
+function ScriptTrackSegmentBlock({ left, width }: { left: number; width: number }) {
+  return (
+    <div
+      className="absolute overflow-hidden rounded border border-[#353535] bg-[#2a2a2e]"
+      style={{ left: `${left}px`, width: `${width}px`, bottom: '24px', height: '34px' }}
+    />
   );
 }
 
