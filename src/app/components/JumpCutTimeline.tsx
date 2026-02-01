@@ -32,9 +32,10 @@ interface JumpCutTimelineProps {
   onPlayheadTimeChange: (timeSeconds: number) => void;
   isNodeViewOpen?: boolean;
   onToggleNodeView?: () => void;
+  onHoverTimeChange?: (time: number | null) => void;
 }
 
-export function JumpCutTimeline({ onCutsChange, durations, clipTrimStart, clipTrimEnd, onTrimChange, playheadTime, onPlayheadTimeChange, isNodeViewOpen = false, onToggleNodeView }: JumpCutTimelineProps) {
+export function JumpCutTimeline({ onCutsChange, durations, clipTrimStart, clipTrimEnd, onTrimChange, playheadTime, onPlayheadTimeChange, isNodeViewOpen = false, onToggleNodeView, onHoverTimeChange }: JumpCutTimelineProps) {
   const [currentCutIndex, setCurrentCutIndex] = useState(0);
   const [showPreview, setShowPreview] = useState(false);
   const [completedCuts, setCompletedCuts] = useState<number[]>([]);
@@ -618,9 +619,14 @@ export function JumpCutTimeline({ onCutsChange, durations, clipTrimStart, clipTr
             if (!container) return;
             const rect = container.getBoundingClientRect();
             const x = scrollLeft + (e.clientX - rect.left);
-            setHoveredPosition(Math.round(x));
+            const px = Math.round(x);
+            setHoveredPosition(px);
+            onHoverTimeChange?.(pixelToTime(px));
           }}
-          onMouseLeave={() => setHoveredPosition(null)}
+          onMouseLeave={() => {
+            setHoveredPosition(null);
+            onHoverTimeChange?.(null);
+          }}
           onClick={() => {
             setTimelineClickedOnce(true);
             if (hoveredPosition !== null) onPlayheadTimeChange(pixelToTime(hoveredPosition));

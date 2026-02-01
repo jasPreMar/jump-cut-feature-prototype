@@ -11,6 +11,7 @@ export function VideoEditor({
   completedCuts,
   playheadTime,
   onPlayheadTimeChange,
+  hoverPreviewTime = null,
   durations,
   onDurationsChange,
   clipTrimStart,
@@ -21,6 +22,7 @@ export function VideoEditor({
   completedCuts: number[];
   playheadTime: number;
   onPlayheadTimeChange: (timeSeconds: number) => void;
+  hoverPreviewTime?: number | null;
   durations: number[];
   onDurationsChange: (durations: number[]) => void;
   clipTrimStart: number[];
@@ -35,6 +37,7 @@ export function VideoEditor({
         completedCuts={completedCuts}
         playheadTime={playheadTime}
         onPlayheadTimeChange={onPlayheadTimeChange}
+        hoverPreviewTime={hoverPreviewTime}
         durations={durations}
         onDurationsChange={onDurationsChange}
         clipTrimStart={clipTrimStart}
@@ -276,6 +279,7 @@ function VideoPreview({
   completedCuts,
   playheadTime,
   onPlayheadTimeChange,
+  hoverPreviewTime = null,
   durations,
   onDurationsChange,
   clipTrimStart,
@@ -286,6 +290,7 @@ function VideoPreview({
   completedCuts: number[];
   playheadTime: number;
   onPlayheadTimeChange: (timeSeconds: number) => void;
+  hoverPreviewTime?: number | null;
   durations: number[];
   onDurationsChange: (durations: number[]) => void;
   clipTrimStart: number[];
@@ -322,7 +327,7 @@ function VideoPreview({
 
   const totalDuration = useMemo(() => startTimes[startTimes.length - 1] || 0, [startTimes]);
 
-  // Map playhead time to clip index and time within trimmed segment
+  // Map playhead time to clip index and time within trimmed segment (for playback)
   const { clipIndex, timeInClip } = useMemo(() => {
     const numClips = trimmedDurations.length;
     const totalSec = startTimes[numClips] || 0;
@@ -339,9 +344,27 @@ function VideoPreview({
     return { clipIndex: 0, timeInClip: 0 };
   }, [playheadTime, startTimes, trimmedDurations]);
 
+  // Display time: hover over script track scrubs the video preview (same as node canvas hover)
+  const displayTime = hoverPreviewTime ?? playheadTime;
+  const { clipIndex: displayClipIndex, timeInClip: displayTimeInClip } = useMemo(() => {
+    const numClips = trimmedDurations.length;
+    const totalSec = startTimes[numClips] || 0;
+    if (totalSec <= 0) return { clipIndex: 0, timeInClip: 0 };
+    for (let i = 0; i < numClips; i++) {
+      const start = startTimes[i];
+      const end = startTimes[i + 1];
+      const dur = trimmedDurations[i] || 0;
+      if (dur > 0 && displayTime >= start && displayTime < end) {
+        return { clipIndex: i, timeInClip: Math.min(displayTime - start, dur) };
+      }
+    }
+    if (displayTime >= totalSec) return { clipIndex: numClips - 1, timeInClip: trimmedDurations[numClips - 1] || 0 };
+    return { clipIndex: 0, timeInClip: 0 };
+  }, [displayTime, startTimes, trimmedDurations]);
+
   currentClipIndexRef.current = clipIndex;
   currentTimeInClipRef.current = timeInClip;
-  loadingClipIndexRef.current = clipIndex;
+  loadingClipIndexRef.current = displayClipIndex; // video src is display clip (hover scrub or playhead)
 
   const trimStartRef = useRef(clipTrimStart);
   const trimEndRef = useRef(clipTrimEnd);
@@ -351,32 +374,47 @@ function VideoPreview({
   const onVideoLoadedData = useCallback(() => {
     const video = videoRef.current;
     if (!video) return;
-    const i = currentClipIndexRef.current;
-    const start = trimStartRef.current[i] ?? 0;
-    const end = trimEndRef.current[i] ?? video.duration;
-    const t = Math.max(start, Math.min(end, start + currentTimeInClipRef.current));
-    video.currentTime = t;
     video.pause(); // always pause on load to prevent autoplay
-    if (isPlaying) video.play().catch(() => {});
-  }, [isPlaying]);
+    if (hoverPreviewTime != null) {
+      const i = displayClipIndex;
+      const start = trimStartRef.current[i] ?? 0;
+      const end = trimEndRef.current[i] ?? video.duration;
+      const t = Math.max(start, Math.min(end, start + displayTimeInClip));
+      video.currentTime = t;
+    } else {
+      const i = currentClipIndexRef.current;
+      const start = trimStartRef.current[i] ?? 0;
+      const end = trimEndRef.current[i] ?? video.duration;
+      const t = Math.max(start, Math.min(end, start + currentTimeInClipRef.current));
+      video.currentTime = t;
+      if (isPlaying) video.play().catch(() => {});
+    }
+  }, [isPlaying, hoverPreviewTime, displayClipIndex, displayTimeInClip]);
 
-  // Sync video to playhead: when paused, seek to trimStart[clip] + timeInClip. When playing, never seek (causes jumpiness).
+  // Sync video to playhead; when hovering script track, scrub to hover time and pause (same as node canvas hover scrub).
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
     if (video.readyState >= 2) {
-      if (isPlaying) {
-        video.play().catch(() => {});
+      if (hoverPreviewTime != null) {
+        const i = displayClipIndex;
+        const start = clipTrimStart[i] ?? 0;
+        const end = clipTrimEnd[i] ?? video.duration;
+        const t = Math.max(start, Math.min(end, start + displayTimeInClip));
+        video.currentTime = t;
+        video.pause();
       } else {
+        // Not hovering: keep video at actual playhead (so leaving hover doesn't jump playhead or start playing from wrong place)
         const i = currentClipIndexRef.current;
         const start = clipTrimStart[i] ?? 0;
         const end = clipTrimEnd[i] ?? video.duration;
         const t = Math.max(start, Math.min(end, start + currentTimeInClipRef.current));
         video.currentTime = t;
-        video.pause();
+        if (isPlaying) video.play().catch(() => {});
+        else video.pause();
       }
     }
-  }, [clipIndex, isPlaying, timeInClip, clipTrimStart, clipTrimEnd]);
+  }, [hoverPreviewTime, displayClipIndex, displayTimeInClip, clipIndex, isPlaying, timeInClip, clipTrimStart, clipTrimEnd]);
 
   // Throttle playhead updates so we don't re-render the whole tree on every timeupdate (smoother playback)
   const playheadThrottleRef = useRef<number | null>(null);
@@ -386,8 +424,10 @@ function VideoPreview({
   startTimesRef.current = startTimes;
 
   const onTimeUpdate = useCallback(() => {
+    if (hoverPreviewTime != null) return; // scrub-only: don't move the real playhead
     const video = videoRef.current;
     if (!video) return;
+    if (video.paused) return; // when paused (including after hover scrub), playhead is only moved by click—not by video currentTime
     const i = currentClipIndexRef.current;
     const starts = startTimesRef.current;
     const trimStart = trimStartRef.current[i] ?? 0;
@@ -410,7 +450,7 @@ function VideoPreview({
         playheadThrottleRef.current = null;
         lastPlayheadUpdateRef.current = performance.now();
         const v = videoRef.current;
-        if (!v) return;
+        if (!v || v.paused) return; // don't push playhead when paused (e.g. after hover scrub)
         const idx = currentClipIndexRef.current;
         const ts = trimStartRef.current[idx] ?? 0;
         const te = trimEndRef.current[idx] ?? v.duration;
@@ -423,7 +463,7 @@ function VideoPreview({
         onPlayheadTimeChange(startTimesRef.current[idx] + Math.max(0, t - ts));
       }, THROTTLE_MS);
     }
-  }, [onPlayheadTimeChange, onPlayPause]);
+  }, [onPlayheadTimeChange, onPlayPause, hoverPreviewTime]);
 
   useEffect(() => {
     return () => {
@@ -459,11 +499,12 @@ function VideoPreview({
   }, []);
 
   const onEnded = useCallback(() => {
+    if (hoverPreviewTime != null) return; // scrub-only: don't move the real playhead
     const i = currentClipIndexRef.current;
     const st = startTimesRef.current;
     if (i < VIDEO_SOURCES.length - 1) onPlayheadTimeChange(st[i + 1]);
     else onPlayPause();
-  }, [onPlayheadTimeChange, onPlayPause]);
+  }, [onPlayheadTimeChange, onPlayPause, hoverPreviewTime]);
 
   return (
     <div className="flex-1 flex flex-col min-w-0 overflow-hidden min-h-0">
@@ -485,7 +526,7 @@ function VideoPreview({
           <video
             ref={videoRef}
             className="absolute inset-0 w-full h-full object-contain bg-black"
-            src={VIDEO_SOURCES[clipIndex]}
+            src={VIDEO_SOURCES[displayClipIndex]}
             onLoadedData={onVideoLoadedData}
             onLoadedMetadata={onLoadedMetadata}
             onTimeUpdate={onTimeUpdate}

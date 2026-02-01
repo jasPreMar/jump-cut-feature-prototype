@@ -13,6 +13,7 @@ export default function App() {
   const [isNodeViewOpen, setIsNodeViewOpen] = useState(false);
   const [effectChains, setEffectChains] = useState<Record<number, EffectBlock[]>>({});
   const [playheadTime, setPlayheadTime] = useState(0); // seconds along timeline
+  const [hoverPreviewTime, setHoverPreviewTime] = useState<number | null>(null); // timeline hover → scrub video preview
   const [durations, setDurations] = useState<number[]>(Array(8).fill(0)); // video clip durations in seconds
   const [clipTrimStart, setClipTrimStart] = useState<number[]>(Array(8).fill(0)); // start time (sec) within each clip
   const [clipTrimEnd, setClipTrimEnd] = useState<number[]>(Array(8).fill(0)); // end time (sec) within each clip
@@ -71,6 +72,7 @@ export default function App() {
             completedCuts={completedCuts}
             playheadTime={playheadTime}
             onPlayheadTimeChange={setPlayheadTime}
+            hoverPreviewTime={hoverPreviewTime}
             durations={durations}
             onDurationsChange={setDurations}
             clipTrimStart={clipTrimStart}
@@ -143,6 +145,7 @@ export default function App() {
                   onTrimChange={handleTrimChange}
                   playheadTime={playheadTime}
                   onPlayheadTimeChange={setPlayheadTime}
+                  onHoverTimeChange={setHoverPreviewTime}
                   isNodeViewOpen={isNodeViewOpen}
                   onToggleNodeView={handleToggleNodeView}
                 />
