@@ -43,7 +43,7 @@ interface NodeCanvasProps {
   onClose: () => void;
   effectChains: Record<number, EffectBlock[]>;
   onEffectChainsChange: (chains: Record<number, EffectBlock[]>) => void;
-  playheadPosition?: number;
+  playheadTime?: number;
 }
 
 function buildGraphFromChains(
@@ -148,7 +148,7 @@ export function NodeCanvas({
   onClose,
   effectChains,
   onEffectChainsChange,
-  playheadPosition,
+  playheadTime,
 }: NodeCanvasProps) {
   const [graph, setGraph] = useState<NodeGraph>(() =>
     buildGraphFromChains(effectChains)
@@ -552,13 +552,12 @@ export function NodeCanvas({
 
   // Format playhead time for display
   const formattedTime = useMemo(() => {
-    if (playheadPosition === undefined) return null;
-    // Simple pixel-to-time conversion (approx 11px per second based on timeline)
-    const totalSeconds = Math.floor(playheadPosition / 11);
+    if (playheadTime === undefined) return null;
+    const totalSeconds = Math.floor(playheadTime);
     const mins = Math.floor(totalSeconds / 60);
     const secs = totalSeconds % 60;
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
-  }, [playheadPosition]);
+  }, [playheadTime]);
 
   return (
     <div className="absolute inset-0 bg-[#0e1015] flex flex-col">

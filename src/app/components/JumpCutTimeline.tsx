@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useLayoutEffect } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback, useLayoutEffect } from 'react';
 import { motion } from 'motion/react';
 import svgPaths from "@/imports/svg-mbvhuxpq3m";
 import scissorsSvgPaths from "@/imports/svg-6x4m2z1e2j";
@@ -18,14 +18,23 @@ interface JumpCut {
   nextClipStartPosition: number;
 }
 
+const BASE_PIXELS_PER_SECOND = 80;
+const GAP = 10;
+const MARGIN = 16;
+const MAX_ZOOM = 4;
+
 interface JumpCutTimelineProps {
   onCutsChange: (cuts: number[]) => void;
-  playheadPosition: number;
-  onPlayheadChange: (position: number) => void;
+  durations: number[];
+  clipTrimStart: number[];
+  clipTrimEnd: number[];
+  onTrimChange: (trimStart: number[], trimEnd: number[]) => void;
+  playheadTime: number;
+  onPlayheadTimeChange: (timeSeconds: number) => void;
   isNodeViewOpen?: boolean;
 }
 
-export function JumpCutTimeline({ onCutsChange, playheadPosition, onPlayheadChange, isNodeViewOpen = false }: JumpCutTimelineProps) {
+export function JumpCutTimeline({ onCutsChange, durations, clipTrimStart, clipTrimEnd, onTrimChange, playheadTime, onPlayheadTimeChange, isNodeViewOpen = false }: JumpCutTimelineProps) {
   const [currentCutIndex, setCurrentCutIndex] = useState(0);
   const [showPreview, setShowPreview] = useState(false);
   const [completedCuts, setCompletedCuts] = useState<number[]>([]);
@@ -33,6 +42,9 @@ export function JumpCutTimeline({ onCutsChange, playheadPosition, onPlayheadChan
   const [clipStartPositions, setClipStartPositions] = useState<Record<number, number>>({});
   const [hoveredPosition, setHoveredPosition] = useState<number | null>(null);
   const [scrollLeft, setScrollLeft] = useState(0);
+  const [zoom, setZoom] = useState(1);
+  const [containerWidth, setContainerWidth] = useState(0);
+  const pinchStartRef = useRef<{ distance: number; zoom: number } | null>(null);
   const [manualSplits, setManualSplits] = useState<number[]>([]);
   const [history, setHistory] = useState<Array<{
     completedCuts: number[];
@@ -40,14 +52,14 @@ export function JumpCutTimeline({ onCutsChange, playheadPosition, onPlayheadChan
     customCutPositions: Record<number, number>;
     clipStartPositions: Record<number, number>;
     manualSplits: number[];
-  }>>([
-    { completedCuts: [], currentCutIndex: 0, customCutPositions: {}, clipStartPositions: {}, manualSplits: [] }
-  ]);
+    trimStart: number[];
+    trimEnd: number[];
+  }>>([]);
   const [historyIndex, setHistoryIndex] = useState(0);
   const timelineRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  // Define clips with base configuration
+  // Define clips with base configuration (originalWidth kept for jump-cut proportions)
   const baseClips: Clip[] = [
     { id: 0, title: "Introducing Log Explorer", color: "blue", originalWidth: 210, transcript: "Log explorer lets you query logs, traces and sessions from all your apps in one place. You can search by any attribute, filter by severity level, and correlate logs with traces to debug issues faster than ever before." },
     { id: 1, title: "Google Chrome Log Explorer Demo", color: "purple", originalWidth: 550, transcript: "Let's take a look at how this works in Google Chrome. First, we'll open the Log Explorer and search for shopping cart events." },
@@ -56,87 +68,148 @@ export function JumpCutTimeline({ onCutsChange, playheadPosition, onPlayheadChan
     { id: 4, title: "Summary & Next Steps", color: "teal", originalWidth: 450, transcript: "We can explore the data patterns across our entire monitoring infrastructure and plan next steps for your team." },
   ];
 
-  // Define 3 jump cut predictions
   const jumpCuts: JumpCut[] = [
     { id: 1, clipIndex: 0, endCutPosition: 190, nextClipStartPosition: 120 },
     { id: 2, clipIndex: 1, endCutPosition: 320, nextClipStartPosition: 150 },
     { id: 3, clipIndex: 2, endCutPosition: 250, nextClipStartPosition: 180 },
   ];
 
-  // Calculate actual clip positions and widths based on completed cuts
-  const clips = useMemo(() => {
-    let currentLeft = 16;
-    const gap = 10;
+  // Full durations (for converting cut positions to seconds)
+  const fullDurations = useMemo(() => {
+    const d = durations.length === 5 ? durations : [1, 1, 1, 1, 1];
+    if (d.every((x) => x <= 0)) return [1, 1, 1, 1, 1];
+    return d.map((x) => (x > 0 ? x : 1));
+  }, [durations]);
 
+  // Trimmed durations for layout (actual in/out points)
+  const effectiveDurations = useMemo(() => {
+    const trimsOk = clipTrimStart.length === 5 && clipTrimEnd.length === 5;
+    return fullDurations.map((full, i) => {
+      if (!trimsOk || clipTrimEnd[i] <= clipTrimStart[i]) return full;
+      return Math.max(0, clipTrimEnd[i] - clipTrimStart[i]);
+    });
+  }, [fullDurations, clipTrimStart, clipTrimEnd]);
+
+  const pps = BASE_PIXELS_PER_SECOND * zoom;
+  const totalDurationSec = effectiveDurations.reduce((a, b) => a + b, 0);
+
+  // Min zoom = zoom out until full timeline fits in viewport (same width formula as clips)
+  const minZoom = useMemo(() => {
+    if (totalDurationSec <= 0 || containerWidth <= 0) return 0.25;
+    const widthAtZoom1 = 2 * MARGIN + totalDurationSec * BASE_PIXELS_PER_SECOND + 4 * GAP;
+    return Math.max(0.01, containerWidth / widthAtZoom1);
+  }, [totalDurationSec, containerWidth]);
+
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setContainerWidth(el.clientWidth));
+    ro.observe(el);
+    setContainerWidth(el.clientWidth);
+    return () => ro.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (zoom < minZoom) setZoom(minZoom);
+  }, [minZoom]);
+
+  // Clip layout: widths = trimmed duration (actual in/out from cuts)
+  const clips = useMemo(() => {
+    let currentLeft = MARGIN;
     return baseClips.map((clip, index) => {
-      // Check if this clip has had its end cut
+      const dur = effectiveDurations[index];
+      const fullWidth = dur * pps;
       const isEndCut = completedCuts.includes(index);
-      
-      // Check if this clip has had its beginning trimmed (from a previous clip's cut)
-      const startPosition = clipStartPositions[index] || 0;
-      
-      // Get cut position from either jump cuts or custom cuts
-      let endCutPosition: number | undefined;
-      if (isEndCut) {
-        // Check if it's a custom cut
-        if (customCutPositions[index] !== undefined) {
-          endCutPosition = customCutPositions[index];
-        } else {
-          // Check if it's a jump cut
-          const jumpCut = jumpCuts.find(jc => jc.clipIndex === index);
-          if (jumpCut) {
-            endCutPosition = jumpCut.endCutPosition;
-          }
-        }
-      }
-      
-      // Calculate the width:
-      // If end is cut, width = endCutPosition - startPosition
-      // If only start is trimmed, width = originalWidth - startPosition
-      // If neither, width = originalWidth
-      let width: number;
-      if (endCutPosition !== undefined) {
-        width = endCutPosition - startPosition;
-      } else {
-        width = clip.originalWidth - startPosition;
-      }
-      
       const clipData = {
         ...clip,
         left: currentLeft,
-        width,
+        width: fullWidth,
+        fullWidth,
         isCut: isEndCut,
       };
-
-      currentLeft += width + gap;
+      currentLeft += fullWidth + GAP;
       return clipData;
     });
-  }, [completedCuts, customCutPositions, clipStartPositions]);
+  }, [effectiveDurations, pps, completedCuts]);
 
-  // Calculate the position of the current jump cut indicator
+  const totalWidthPx = useMemo(() => {
+    if (clips.length === 0) return 2800;
+    const last = clips[clips.length - 1];
+    return last.left + (last as { fullWidth?: number }).fullWidth! + MARGIN;
+  }, [clips]);
+
+  // Time <-> pixel conversion
+  const startTimesSec = useMemo(() => {
+    const s: number[] = [0];
+    for (let i = 0; i < 5; i++) s.push(s[i] + effectiveDurations[i]);
+    return s;
+  }, [effectiveDurations]);
+
+  const timeToPixel = useCallback((t: number) => {
+    for (let i = 0; i < 5; i++) {
+      const start = startTimesSec[i];
+      const end = startTimesSec[i + 1];
+      const dur = effectiveDurations[i];
+      if (t >= start && t < end && dur > 0) {
+        const clip = clips[i];
+        const frac = (t - start) / dur;
+        return (clip as { left: number; fullWidth?: number }).left + frac * ((clip as { fullWidth?: number }).fullWidth ?? clip.width);
+      }
+    }
+    return clips[4] ? (clips[4] as { left: number; fullWidth?: number }).left + ((clips[4] as { fullWidth?: number }).fullWidth ?? clips[4].width) : MARGIN;
+  }, [startTimesSec, effectiveDurations, clips]);
+
+  const pixelToTime = useCallback((px: number) => {
+    for (let i = 0; i < clips.length; i++) {
+      const c = clips[i] as { left: number; width: number; fullWidth?: number };
+      const fullW = c.fullWidth ?? c.width;
+      const end = c.left + fullW;
+      if (px >= c.left && px < end) {
+        const frac = fullW > 0 ? (px - c.left) / fullW : 0;
+        return startTimesSec[i] + frac * effectiveDurations[i];
+      }
+    }
+    return Math.min(playheadTime, totalDurationSec);
+  }, [clips, startTimesSec, effectiveDurations, totalDurationSec, playheadTime]);
+
+  const playheadPosition = timeToPixel(playheadTime);
+
+  // Calculate the position of the current jump cut indicator (proportion-based in new layout)
   const currentCutPosition = useMemo(() => {
     if (currentCutIndex >= jumpCuts.length) return null;
-    
     const cut = jumpCuts[currentCutIndex];
-    const clip = clips[cut.clipIndex];
-    const nextClip = clips[cut.clipIndex + 1];
-    
+    const clip = clips[cut.clipIndex] as { left: number; fullWidth?: number };
+    const nextClip = clips[cut.clipIndex + 1] as { left: number; fullWidth?: number } | undefined;
     if (!nextClip) return null;
-    
-    // Calculate the midpoint between the end of current clip cut and start of next clip cut
-    const endCutAbsolutePosition = clip.left + cut.endCutPosition;
-    const nextClipStartAbsolutePosition = nextClip.left + cut.nextClipStartPosition;
-    const midpoint = (endCutAbsolutePosition + nextClipStartAbsolutePosition) / 2;
-    
-    return midpoint;
+    const fullW = clip.fullWidth ?? 0;
+    const nextFullW = nextClip.fullWidth ?? 0;
+    const endCutAbsolutePosition = clip.left + (cut.endCutPosition / baseClips[cut.clipIndex].originalWidth) * fullW;
+    const nextClipStartAbsolutePosition = nextClip.left + (cut.nextClipStartPosition / baseClips[cut.clipIndex + 1].originalWidth) * nextFullW;
+    return (endCutAbsolutePosition + nextClipStartAbsolutePosition) / 2;
   }, [currentCutIndex, clips]);
 
   const isComplete = currentCutIndex >= jumpCuts.length;
   const currentCut = jumpCuts[currentCutIndex];
 
-  // Helper to save state to history
-  const saveToHistory = (newCompletedCuts: number[], newCurrentCutIndex: number, newCustomCutPositions: Record<number, number>, newClipStartPositions: Record<number, number>, newManualSplits: number[]) => {
-    const newState = { completedCuts: newCompletedCuts, currentCutIndex: newCurrentCutIndex, customCutPositions: newCustomCutPositions, clipStartPositions: newClipStartPositions, manualSplits: newManualSplits };
+  // Helper to save state to history (for C-key split; trim passed through)
+  const saveToHistory = (
+    newCompletedCuts: number[],
+    newCurrentCutIndex: number,
+    newCustomCutPositions: Record<number, number>,
+    newClipStartPositions: Record<number, number>,
+    newManualSplits: number[],
+    newTrimStart: number[],
+    newTrimEnd: number[]
+  ) => {
+    const newState = {
+      completedCuts: newCompletedCuts,
+      currentCutIndex: newCurrentCutIndex,
+      customCutPositions: newCustomCutPositions,
+      clipStartPositions: newClipStartPositions,
+      manualSplits: newManualSplits,
+      trimStart: newTrimStart,
+      trimEnd: newTrimEnd,
+    };
     const newHistory = history.slice(0, historyIndex + 1);
     newHistory.push(newState);
     setHistory(newHistory);
@@ -146,14 +219,16 @@ export function JumpCutTimeline({ onCutsChange, playheadPosition, onPlayheadChan
     setCustomCutPositions(newCustomCutPositions);
     setClipStartPositions(newClipStartPositions);
     setManualSplits(newManualSplits);
+    onTrimChange(newTrimStart, newTrimEnd);
     onCutsChange(newCompletedCuts);
   };
 
-  // Helper to find which clip contains a position
+  // Helper to find which clip contains a position (use full clip width for hit area)
   const findClipAtPosition = (position: number): { clipIndex: number; positionInClip: number } | null => {
     for (let i = 0; i < clips.length; i++) {
-      const clip = clips[i];
-      if (position >= clip.left && position < clip.left + clip.width) {
+      const clip = clips[i] as { left: number; width: number; fullWidth?: number };
+      const fullW = clip.fullWidth ?? clip.width;
+      if (position >= clip.left && position < clip.left + fullW) {
         return {
           clipIndex: i,
           positionInClip: position - clip.left
@@ -180,18 +255,44 @@ export function JumpCutTimeline({ onCutsChange, playheadPosition, onPlayheadChan
         });
       }
     } else {
-      // Second Tab: Make the cut and move to next
-      const newCompletedCuts = [...completedCuts, currentCut.clipIndex];
+      // Second Tab: Make the cut (apply trim so playback actually cuts)
+      const ci = currentCut.clipIndex;
+      const nextIdx = ci + 1;
+      const endSec = (currentCut.endCutPosition / baseClips[ci].originalWidth) * fullDurations[ci];
+      const nextStartSec = nextIdx < baseClips.length
+        ? (currentCut.nextClipStartPosition / baseClips[nextIdx].originalWidth) * fullDurations[nextIdx]
+        : 0;
+      const newTrimStart = [...clipTrimStart];
+      const newTrimEnd = [...clipTrimEnd];
+      newTrimEnd[ci] = endSec;
+      if (nextIdx < 5) newTrimStart[nextIdx] = nextStartSec;
+
+      const newCompletedCuts = [...completedCuts, ci];
       const newCurrentCutIndex = currentCutIndex + 1;
-      
-      // Record the start position for the next clip
       const newClipStartPositions = { ...clipStartPositions };
-      const nextClipIndex = currentCut.clipIndex + 1;
-      if (nextClipIndex < baseClips.length) {
-        newClipStartPositions[nextClipIndex] = currentCut.nextClipStartPosition;
+      if (nextIdx < baseClips.length) {
+        newClipStartPositions[nextIdx] = currentCut.nextClipStartPosition / baseClips[nextIdx].originalWidth;
       }
-      
-      saveToHistory(newCompletedCuts, newCurrentCutIndex, customCutPositions, newClipStartPositions, manualSplits);
+
+      // Push state BEFORE cut so undo restores it
+      const beforeState = {
+        completedCuts,
+        currentCutIndex,
+        customCutPositions,
+        clipStartPositions,
+        manualSplits,
+        trimStart: clipTrimStart,
+        trimEnd: clipTrimEnd,
+      };
+      const newHistory = history.slice(0, historyIndex + 1);
+      newHistory.push(beforeState);
+      setHistory(newHistory);
+      setHistoryIndex(newHistory.length - 1);
+      setCompletedCuts(newCompletedCuts);
+      setCurrentCutIndex(newCurrentCutIndex);
+      setClipStartPositions(newClipStartPositions);
+      onTrimChange(newTrimStart, newTrimEnd);
+      onCutsChange(newCompletedCuts);
       setShowPreview(false);
     }
   };
@@ -211,6 +312,7 @@ export function JumpCutTimeline({ onCutsChange, playheadPosition, onPlayheadChan
           setClipStartPositions(state.clipStartPositions);
           setManualSplits(state.manualSplits);
           setShowPreview(false);
+          if (state.trimStart && state.trimEnd) onTrimChange(state.trimStart, state.trimEnd);
           onCutsChange(state.completedCuts);
         }
         return;
@@ -229,6 +331,7 @@ export function JumpCutTimeline({ onCutsChange, playheadPosition, onPlayheadChan
           setClipStartPositions(state.clipStartPositions);
           setManualSplits(state.manualSplits);
           setShowPreview(false);
+          if (state.trimStart && state.trimEnd) onTrimChange(state.trimStart, state.trimEnd);
           onCutsChange(state.completedCuts);
         }
         return;
@@ -241,7 +344,7 @@ export function JumpCutTimeline({ onCutsChange, playheadPosition, onPlayheadChan
         const clipInfo = findClipAtPosition(cutPos);
         if (clipInfo && clipInfo.positionInClip > 4 && clipInfo.positionInClip < clips[clipInfo.clipIndex].width - 4) {
           const newManualSplits = [...manualSplits, cutPos];
-          saveToHistory(completedCuts, currentCutIndex, customCutPositions, clipStartPositions, newManualSplits);
+          saveToHistory(completedCuts, currentCutIndex, customCutPositions, clipStartPositions, newManualSplits, clipTrimStart, clipTrimEnd);
         }
         return;
       }
@@ -255,19 +358,52 @@ export function JumpCutTimeline({ onCutsChange, playheadPosition, onPlayheadChan
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentCutIndex, showPreview, completedCuts, currentCut, isComplete, currentCutPosition, history, historyIndex, hoveredPosition, clips]);
+  }, [currentCutIndex, showPreview, completedCuts, currentCut, isComplete, currentCutPosition, history, historyIndex, hoveredPosition, clips, playheadPosition]);
+
+  const handleWheel = useCallback((e: React.WheelEvent) => {
+    if (!e.ctrlKey && !e.metaKey) return;
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? -0.1 : 0.1;
+    setZoom((z) => Math.min(MAX_ZOOM, Math.max(minZoom, z + delta)));
+  }, [minZoom]);
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      const d = Math.hypot(e.touches[1].clientX - e.touches[0].clientX, e.touches[1].clientY - e.touches[0].clientY);
+      pinchStartRef.current = { distance: d, zoom };
+    }
+  }, [zoom]);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length === 2 && pinchStartRef.current) {
+      e.preventDefault();
+      const d = Math.hypot(e.touches[1].clientX - e.touches[0].clientX, e.touches[1].clientY - e.touches[0].clientY);
+      const scale = d / pinchStartRef.current.distance;
+      const newZoom = Math.min(MAX_ZOOM, Math.max(minZoom, pinchStartRef.current.zoom * scale));
+      pinchStartRef.current = { distance: d, zoom: newZoom };
+      setZoom(newZoom);
+    }
+  }, [minZoom]);
+
+  const handleTouchEnd = useCallback(() => {
+    if (pinchStartRef.current && scrollContainerRef.current) pinchStartRef.current = null;
+  }, []);
 
   return (
     <div
       className="absolute bg-[#171717] border-[#25272b] border-solid border-t inset-0 overflow-x-auto overflow-y-clip"
       ref={scrollContainerRef}
-      onScroll={(e) => {
-        setScrollLeft(e.currentTarget.scrollLeft);
-      }}
+      onScroll={(e) => setScrollLeft(e.currentTarget.scrollLeft)}
+      onWheel={handleWheel}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      onTouchCancel={handleTouchEnd}
+      style={{ touchAction: 'pan-x pinch-zoom' }}
     >
-      <div className="relative h-full min-w-[2800px]" ref={timelineRef}>
-        {/* Timeline rulers */}
-        <TimelineRulers />
+      <div className="relative h-full" style={{ minWidth: totalWidthPx }} ref={timelineRef}>
+        {/* Timeline rulers – actual time */}
+        <TimelineRulers totalDurationSec={totalDurationSec} timeToPixel={timeToPixel} />
         
         {/* Track backgrounds */}
         <div className="absolute bg-[#201f22] border border-[#282829] border-solid bottom-[22px] h-[36px] left-[16px] right-[16px]" />
@@ -279,6 +415,9 @@ export function JumpCutTimeline({ onCutsChange, playheadPosition, onPlayheadChan
           const isCurrentCutClip = showPreview && currentCut?.clipIndex === index;
           const isNextCutClip = showPreview && currentCut?.clipIndex === index - 1;
           const reel = index % 2;
+          const fullW = (clip as { fullWidth?: number }).fullWidth ?? clip.width;
+          const endCutPx = isCurrentCutClip ? (currentCut.endCutPosition / baseClips[index].originalWidth) * fullW : undefined;
+          const startCutPx = isNextCutClip ? (currentCut.nextClipStartPosition / baseClips[index].originalWidth) * fullW : undefined;
           return (
             <VideoClip
               key={clip.id}
@@ -288,9 +427,9 @@ export function JumpCutTimeline({ onCutsChange, playheadPosition, onPlayheadChan
               title={clip.title}
               color={clip.color}
               showEndCutPreview={isCurrentCutClip}
-              endCutPosition={isCurrentCutClip ? currentCut.endCutPosition : undefined}
+              endCutPosition={endCutPx}
               showStartCutPreview={isNextCutClip}
-              startCutPosition={isNextCutClip ? currentCut.nextClipStartPosition : undefined}
+              startCutPosition={startCutPx}
               isNodeViewOpen={isNodeViewOpen}
               reel={reel}
             />
@@ -308,16 +447,20 @@ export function JumpCutTimeline({ onCutsChange, playheadPosition, onPlayheadChan
           <Playhead position={hoveredPosition} ghost />
         )}
         
-        {/* Hover detection zones */}
+        {/* Hover detection zones + click to seek (content coords = scrollLeft + viewport x) */}
         <div 
-          className="absolute h-[192px] left-0 top-0 right-0 z-20"
+          className="absolute h-[192px] left-0 top-0 right-0 z-20 cursor-pointer"
           onMouseMove={(e) => {
-            if (!timelineRef.current) return;
-            const timelineRect = timelineRef.current.getBoundingClientRect();
-            const x = e.clientX - timelineRect.left;
-            setHoveredPosition(Math.floor(x / 11) * 11 + 5);
+            const container = scrollContainerRef.current;
+            if (!container) return;
+            const rect = container.getBoundingClientRect();
+            const x = scrollLeft + (e.clientX - rect.left);
+            setHoveredPosition(Math.round(x));
           }}
           onMouseLeave={() => setHoveredPosition(null)}
+          onClick={() => {
+            if (hoveredPosition !== null) onPlayheadTimeChange(pixelToTime(hoveredPosition));
+          }}
         />
       </div>
       
@@ -335,22 +478,43 @@ export function JumpCutTimeline({ onCutsChange, playheadPosition, onPlayheadChan
   );
 }
 
-function TimelineRulers() {
+function formatRulerTime(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  if (m > 0) return `${m}:${s.toString().padStart(2, '0')}`;
+  return s.toString();
+}
+
+function TimelineRulers({ totalDurationSec, timeToPixel }: { totalDurationSec: number; timeToPixel: (t: number) => number }) {
+  const tickInterval = useMemo(() => {
+    if (totalDurationSec <= 0) return 5;
+    const candidates = [1, 2, 5, 10, 15, 30, 60, 120];
+    const targetTicks = 8;
+    const ideal = totalDurationSec / targetTicks;
+    let best = candidates[0];
+    for (const c of candidates) {
+      if (Math.abs(c - ideal) <= Math.abs(best - ideal)) best = c;
+    }
+    return best;
+  }, [totalDurationSec]);
+
+  const ticks = useMemo(() => {
+    const out: number[] = [];
+    for (let t = 0; t <= totalDurationSec; t += tickInterval) out.push(t);
+    if (out[out.length - 1] !== totalDurationSec) out.push(totalDurationSec);
+    return out;
+  }, [totalDurationSec, tickInterval]);
+
   return (
-    <div className="absolute bottom-[161px] content-stretch flex gap-[44px] items-center left-[15px]">
-      {[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50].map((num, i) => (
-        <div key={i} className="flex items-center gap-[44px]">
-          <div className="flex flex-col font-['Inter:Regular',sans-serif] font-normal justify-center leading-[0] not-italic text-[#777] text-[11px] text-center tracking-[0.11px] w-[14px]">
-            <p className="leading-[normal] whitespace-pre-wrap">{num.toString().padStart(2, '0')}</p>
-          </div>
-          {i < 10 && (
-            <>
-              <TimelineTick />
-              <TimelineTick />
-              <TimelineTick />
-              <TimelineTick />
-            </>
-          )}
+    <div className="absolute bottom-[161px] left-0 right-0 h-[7px]" style={{ minWidth: '100%' }}>
+      {ticks.map((t) => (
+        <div
+          key={t}
+          className="absolute flex flex-col items-center font-['Inter:Regular',sans-serif] font-normal text-[#777] text-[11px] tracking-[0.11px]"
+          style={{ left: timeToPixel(t) - 7 }}
+        >
+          <p className="leading-[normal] whitespace-nowrap">{formatRulerTime(t)}</p>
+          <div className="mt-0.5 h-[5px] w-px bg-[#2C2C2C] rounded-full" />
         </div>
       ))}
     </div>

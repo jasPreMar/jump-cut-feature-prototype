@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { motion, AnimatePresence, LayoutGroup } from "motion/react";
 import { VideoEditor } from "@/app/components/VideoEditor";
 import { JumpCutTimeline } from "@/app/components/JumpCutTimeline";
@@ -12,7 +12,27 @@ export default function App() {
   const [completedCuts, setCompletedCuts] = useState<number[]>([]);
   const [isNodeViewOpen, setIsNodeViewOpen] = useState(false);
   const [effectChains, setEffectChains] = useState<Record<number, EffectBlock[]>>({});
-  const [playheadPosition, setPlayheadPosition] = useState(13);
+  const [playheadTime, setPlayheadTime] = useState(0); // seconds along timeline
+  const [durations, setDurations] = useState<number[]>([0, 0, 0, 0, 0]); // video clip durations in seconds
+  const [clipTrimStart, setClipTrimStart] = useState<number[]>([0, 0, 0, 0, 0]); // start time (sec) within each clip
+  const [clipTrimEnd, setClipTrimEnd] = useState<number[]>([0, 0, 0, 0, 0]); // end time (sec) within each clip
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  // When durations load, set trim end to duration only when not yet set (don’t overwrite user cuts)
+  useEffect(() => {
+    if (durations.length !== 5) return;
+    setClipTrimEnd((prev) => {
+      const next = [...prev];
+      let changed = false;
+      for (let i = 0; i < 5; i++) if (durations[i] > 0 && (prev[i] === 0 || prev[i] === undefined)) { next[i] = durations[i]; changed = true; }
+      return changed ? next : prev;
+    });
+  }, [durations]);
+
+  const handleTrimChange = useCallback((trimStart: number[], trimEnd: number[]) => {
+    setClipTrimStart(trimStart);
+    setClipTrimEnd(trimEnd);
+  }, []);
 
   const handleToggleNodeView = useCallback(() => {
     setIsNodeViewOpen((prev) => !prev);
@@ -22,6 +42,22 @@ export default function App() {
     setIsNodeViewOpen(false);
   }, []);
 
+  const handlePlayPause = useCallback(() => {
+    setIsPlaying((prev) => !prev);
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== " " || e.repeat) return;
+      const target = e.target as HTMLElement;
+      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) return;
+      e.preventDefault();
+      handlePlayPause();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [handlePlayPause]);
+
   return (
     <LayoutGroup>
       <div className="bg-[#0e1015] flex flex-col h-screen w-full overflow-hidden">
@@ -29,6 +65,14 @@ export default function App() {
           <VideoEditor
             completedCuts={completedCuts}
             onToggleNodeView={handleToggleNodeView}
+            playheadTime={playheadTime}
+            onPlayheadTimeChange={setPlayheadTime}
+            durations={durations}
+            onDurationsChange={setDurations}
+            clipTrimStart={clipTrimStart}
+            clipTrimEnd={clipTrimEnd}
+            isPlaying={isPlaying}
+            onPlayPause={handlePlayPause}
           />
         </div>
         <motion.div
@@ -51,7 +95,7 @@ export default function App() {
                   onClose={handleCloseNodeView}
                   effectChains={effectChains}
                   onEffectChainsChange={setEffectChains}
-                  playheadPosition={playheadPosition}
+                  playheadTime={playheadTime}
                 />
                 <AnimatePresence>
                   <motion.div
@@ -77,8 +121,12 @@ export default function App() {
               >
                 <JumpCutTimeline
                   onCutsChange={setCompletedCuts}
-                  playheadPosition={playheadPosition}
-                  onPlayheadChange={setPlayheadPosition}
+                  durations={durations}
+                  clipTrimStart={clipTrimStart}
+                  clipTrimEnd={clipTrimEnd}
+                  onTrimChange={handleTrimChange}
+                  playheadTime={playheadTime}
+                  onPlayheadTimeChange={setPlayheadTime}
                   isNodeViewOpen={isNodeViewOpen}
                 />
               </motion.div>

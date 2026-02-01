@@ -1,16 +1,56 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { LayoutGrid } from "lucide-react";
 import svgPaths from "@/imports/svg-mbvhuxpq3m";
 import image1 from "../../assets/4ade86ef9dac706bb3957bd6282d330df1e57c89.png";
 import image2 from "../../assets/c4945bd878c904a44e42b756d4a58bd0d542132d.png";
 import image3 from "../../assets/7633c3f223e4bc39f692ecfd0b163fb92cb5ad4e.png";
 import image4 from "../../assets/fdac420adeb4e37cb6c0fc58ae2eaac15892ec6c.png";
+import clip1Src from "../../assets/clip 1.MOV";
+import clip2Src from "../../assets/clip 2.MOV";
+import clip3Src from "../../assets/clip 3.MOV";
+import clip4Src from "../../assets/clip 4.MOV";
+import clip5Src from "../../assets/clip 5.MOV";
 
-export function VideoEditor({ completedCuts, onToggleNodeView }: { completedCuts: number[]; onToggleNodeView?: () => void }) {
+const VIDEO_SOURCES = [clip1Src, clip2Src, clip3Src, clip4Src, clip5Src];
+
+export function VideoEditor({
+  completedCuts,
+  onToggleNodeView,
+  playheadTime,
+  onPlayheadTimeChange,
+  durations,
+  onDurationsChange,
+  clipTrimStart,
+  clipTrimEnd,
+  isPlaying,
+  onPlayPause,
+}: {
+  completedCuts: number[];
+  onToggleNodeView?: () => void;
+  playheadTime: number;
+  onPlayheadTimeChange: (timeSeconds: number) => void;
+  durations: number[];
+  onDurationsChange: (durations: number[]) => void;
+  clipTrimStart: number[];
+  clipTrimEnd: number[];
+  isPlaying: boolean;
+  onPlayPause: () => void;
+}) {
   return (
     <div className="flex h-full items-stretch gap-3 p-3 overflow-hidden">
       <ChatPanel />
-      <VideoPreview completedCuts={completedCuts} onToggleNodeView={onToggleNodeView} />
+      <VideoPreview
+        completedCuts={completedCuts}
+        onToggleNodeView={onToggleNodeView}
+        playheadTime={playheadTime}
+        onPlayheadTimeChange={onPlayheadTimeChange}
+        durations={durations}
+        onDurationsChange={onDurationsChange}
+        clipTrimStart={clipTrimStart}
+        clipTrimEnd={clipTrimEnd}
+        isPlaying={isPlaying}
+        onPlayPause={onPlayPause}
+      />
     </div>
   );
 }
@@ -234,34 +274,235 @@ function ChatPanel() {
   );
 }
 
-function VideoPreview({ completedCuts, onToggleNodeView }: { completedCuts: number[]; onToggleNodeView?: () => void }) {
-  let currentImage = image1;
-  const cutCount = completedCuts.length;
+function formatTime(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  const ms = Math.floor((seconds % 1) * 100);
+  return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}.${ms.toString().padStart(2, "0")}`;
+}
 
-  if (cutCount >= 3) {
-    currentImage = image4;
-  } else if (cutCount === 2) {
-    currentImage = image3;
-  } else if (cutCount === 1) {
-    currentImage = image2;
-  }
+function VideoPreview({
+  completedCuts,
+  onToggleNodeView,
+  playheadTime,
+  onPlayheadTimeChange,
+  durations,
+  onDurationsChange,
+  clipTrimStart,
+  clipTrimEnd,
+  isPlaying,
+  onPlayPause,
+}: {
+  completedCuts: number[];
+  onToggleNodeView?: () => void;
+  playheadTime: number;
+  onPlayheadTimeChange: (timeSeconds: number) => void;
+  durations: number[];
+  onDurationsChange: (durations: number[]) => void;
+  clipTrimStart: number[];
+  clipTrimEnd: number[];
+  isPlaying: boolean;
+  onPlayPause: () => void;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [localDurations, setLocalDurations] = useState<number[]>([0, 0, 0, 0, 0]);
+  const currentClipIndexRef = useRef(0);
+  const loadingClipIndexRef = useRef(0);
+  const currentTimeInClipRef = useRef(0);
+
+  // Report durations to parent when loaded
+  useEffect(() => {
+    if (localDurations.some((d) => d > 0)) onDurationsChange(localDurations);
+  }, [localDurations, onDurationsChange]);
+
+  // Trimmed durations and start times (playback uses trim in/out)
+  const trimmedDurations = useMemo(() => {
+    const d = localDurations;
+    const ok = clipTrimStart.length === 5 && clipTrimEnd.length === 5;
+    return d.map((full, i) => {
+      if (!ok || clipTrimEnd[i] <= clipTrimStart[i]) return full || 0;
+      return Math.max(0, clipTrimEnd[i] - clipTrimStart[i]);
+    });
+  }, [localDurations, clipTrimStart, clipTrimEnd]);
+
+  const startTimes = useMemo(() => {
+    const s: number[] = [0];
+    for (let i = 0; i < 5; i++) s.push(s[i] + trimmedDurations[i]);
+    return s;
+  }, [trimmedDurations]);
+
+  const totalDuration = useMemo(() => startTimes[5] || 0, [startTimes]);
+
+  // Map playhead time to clip index and time within trimmed segment
+  const { clipIndex, timeInClip } = useMemo(() => {
+    const totalSec = startTimes[5] || 0;
+    if (totalSec <= 0) return { clipIndex: 0, timeInClip: 0 };
+    for (let i = 0; i < 5; i++) {
+      const start = startTimes[i];
+      const end = startTimes[i + 1];
+      const dur = trimmedDurations[i] || 0;
+      if (dur > 0 && playheadTime >= start && playheadTime < end) {
+        return { clipIndex: i, timeInClip: Math.min(playheadTime - start, dur) };
+      }
+    }
+    if (playheadTime >= totalSec) return { clipIndex: 4, timeInClip: trimmedDurations[4] || 0 };
+    return { clipIndex: 0, timeInClip: 0 };
+  }, [playheadTime, startTimes, trimmedDurations]);
+
+  currentClipIndexRef.current = clipIndex;
+  currentTimeInClipRef.current = timeInClip;
+  loadingClipIndexRef.current = clipIndex;
+
+  const trimStartRef = useRef(clipTrimStart);
+  const trimEndRef = useRef(clipTrimEnd);
+  trimStartRef.current = clipTrimStart;
+  trimEndRef.current = clipTrimEnd;
+
+  const onVideoLoadedData = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const i = currentClipIndexRef.current;
+    const start = trimStartRef.current[i] ?? 0;
+    const end = trimEndRef.current[i] ?? video.duration;
+    const t = Math.max(start, Math.min(end, start + currentTimeInClipRef.current));
+    video.currentTime = t;
+    if (isPlaying) video.play().catch(() => {});
+    else video.pause();
+  }, [isPlaying]);
+
+  // Sync video to playhead: when paused, seek to trimStart[clip] + timeInClip. When playing, never seek (causes jumpiness).
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (video.readyState >= 2) {
+      if (isPlaying) {
+        video.play().catch(() => {});
+      } else {
+        const i = currentClipIndexRef.current;
+        const start = clipTrimStart[i] ?? 0;
+        const end = clipTrimEnd[i] ?? video.duration;
+        const t = Math.max(start, Math.min(end, start + currentTimeInClipRef.current));
+        video.currentTime = t;
+        video.pause();
+      }
+    }
+  }, [clipIndex, isPlaying, timeInClip, clipTrimStart, clipTrimEnd]);
+
+  // Throttle playhead updates so we don't re-render the whole tree on every timeupdate (smoother playback)
+  const playheadThrottleRef = useRef<number | null>(null);
+  const lastPlayheadUpdateRef = useRef(0);
+  const THROTTLE_MS = 50; // ~20 fps for timeline scrubber
+  const startTimesRef = useRef(startTimes);
+  startTimesRef.current = startTimes;
+
+  const onTimeUpdate = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const i = currentClipIndexRef.current;
+    const starts = startTimesRef.current;
+    const trimStart = trimStartRef.current[i] ?? 0;
+    const trimEnd = trimEndRef.current[i] ?? video.duration;
+    const ct = video.currentTime;
+    if (ct >= trimEnd - 0.05) {
+      if (i < 4) onPlayheadTimeChange(starts[i + 1]);
+      else onPlayPause();
+      return;
+    }
+    const timeInClipSec = Math.max(0, ct - trimStart);
+    const currentTimeSec = starts[i] + timeInClipSec;
+
+    const now = performance.now();
+    if (now - lastPlayheadUpdateRef.current >= THROTTLE_MS) {
+      lastPlayheadUpdateRef.current = now;
+      onPlayheadTimeChange(currentTimeSec);
+    } else if (playheadThrottleRef.current === null) {
+      playheadThrottleRef.current = window.setTimeout(() => {
+        playheadThrottleRef.current = null;
+        lastPlayheadUpdateRef.current = performance.now();
+        const v = videoRef.current;
+        if (!v) return;
+        const idx = currentClipIndexRef.current;
+        const ts = trimStartRef.current[idx] ?? 0;
+        const te = trimEndRef.current[idx] ?? v.duration;
+        const t = v.currentTime;
+        if (t >= te - 0.05) {
+          if (idx < 4) onPlayheadTimeChange(startTimesRef.current[idx + 1]);
+          else onPlayPause();
+          return;
+        }
+        onPlayheadTimeChange(startTimesRef.current[idx] + Math.max(0, t - ts));
+      }, THROTTLE_MS);
+    }
+  }, [onPlayheadTimeChange, onPlayPause]);
+
+  useEffect(() => {
+    return () => {
+      if (playheadThrottleRef.current !== null) {
+        window.clearTimeout(playheadThrottleRef.current);
+        playheadThrottleRef.current = null;
+      }
+    };
+  }, []);
+
+  const onLoadedMetadata = useCallback((e: React.SyntheticEvent<HTMLVideoElement>) => {
+    const video = e.currentTarget;
+    const idx = loadingClipIndexRef.current;
+    if (idx >= 0 && idx < 5 && Number.isFinite(video.duration)) {
+      setLocalDurations((prev) => {
+        const next = [...prev];
+        next[idx] = video.duration;
+        return next;
+      });
+    }
+  }, []);
+
+  const onPreloadMetadata = useCallback((e: React.SyntheticEvent<HTMLVideoElement>) => {
+    const video = e.currentTarget;
+    const index = Number((video as HTMLVideoElement & { dataset: { index?: string } }).dataset.index);
+    if (index >= 0 && index < 5 && Number.isFinite(video.duration) && video.duration > 0) {
+      setLocalDurations((prev) => {
+        const next = [...prev];
+        next[index] = video.duration;
+        return next;
+      });
+    }
+  }, []);
+
+  const onEnded = useCallback(() => {
+    const i = currentClipIndexRef.current;
+    const st = startTimesRef.current;
+    if (i < 4) onPlayheadTimeChange(st[i + 1]);
+    else onPlayPause();
+  }, [onPlayheadTimeChange, onPlayPause]);
 
   return (
     <div className="flex-1 flex flex-col min-w-0 overflow-hidden min-h-0">
       {/* Video frame - 16:9 aspect ratio at all times */}
       <div className="flex-1 min-h-0 flex items-center justify-center p-0">
         <div className="w-full max-h-full aspect-video rounded-sm overflow-hidden bg-black relative shrink-0">
-          <img
-            alt="Video preview"
-            className="absolute inset-0 w-full h-full object-cover"
-            src={currentImage}
+          {/* Hidden preload: durations come from each file’s loadedmetadata, so swapping clip files in src/assets updates timeline widths automatically */}
+          {VIDEO_SOURCES.map((src, i) => (
+            <video
+              key={i}
+              data-index={i}
+              src={src}
+              preload="metadata"
+              onLoadedMetadata={onPreloadMetadata}
+              className="hidden"
+              aria-hidden
+            />
+          ))}
+          <video
+            ref={videoRef}
+            className="absolute inset-0 w-full h-full object-contain bg-black"
+            src={VIDEO_SOURCES[clipIndex]}
+            onLoadedData={onVideoLoadedData}
+            onLoadedMetadata={onLoadedMetadata}
+            onTimeUpdate={onTimeUpdate}
+            onEnded={onEnded}
+            playsInline
+            muted={false}
           />
-          {/* Drop zone for future video file */}
-          <div className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity bg-black/30 pointer-events-auto">
-            <p className="text-white/60 text-sm font-medium">
-              Drop a video file here
-            </p>
-          </div>
         </div>
       </div>
 
@@ -279,8 +520,8 @@ function VideoPreview({ completedCuts, onToggleNodeView }: { completedCuts: numb
 
         {/* Playhead time */}
         <div className="flex items-center gap-0.5 text-sm tracking-wide font-mono">
-          <span className="text-[#ddd]">00:00:56</span>
-          <span className="text-[#777]">/ 00:21:43</span>
+          <span className="text-[#ddd]">{formatTime(timeInClip)}</span>
+          <span className="text-[#777]">/ {formatTime(totalDuration)}</span>
         </div>
 
         <div className="flex-1" />
@@ -289,8 +530,9 @@ function VideoPreview({ completedCuts, onToggleNodeView }: { completedCuts: numb
         <div className="flex items-center gap-4">
           {/* Play/Pause button */}
           <button
+            onClick={onPlayPause}
             className="bg-[#25252a] hover:bg-[#35353a] transition-colors rounded-sm px-3 py-1 cursor-pointer"
-            title="Play/Pause"
+            title="Play/Pause (Space)"
           >
             <svg
               width="14"
