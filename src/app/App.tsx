@@ -69,7 +69,6 @@ export default function App() {
         <div className="flex-1 min-h-0">
           <VideoEditor
             completedCuts={completedCuts}
-            onToggleNodeView={handleToggleNodeView}
             playheadTime={playheadTime}
             onPlayheadTimeChange={setPlayheadTime}
             durations={durations}
@@ -145,6 +144,7 @@ export default function App() {
                   playheadTime={playheadTime}
                   onPlayheadTimeChange={setPlayheadTime}
                   isNodeViewOpen={isNodeViewOpen}
+                  onToggleNodeView={handleToggleNodeView}
                 />
               </motion.div>
             )}

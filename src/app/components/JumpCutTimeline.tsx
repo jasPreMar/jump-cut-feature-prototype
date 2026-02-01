@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback, useLayoutEffect } from 'react';
 import { motion } from 'motion/react';
+import { Workflow } from 'lucide-react';
 import svgPaths from "@/imports/svg-mbvhuxpq3m";
-import scissorsSvgPaths from "@/imports/svg-6x4m2z1e2j";
-
 interface Clip {
   id: number;
   title: string;
@@ -32,15 +31,17 @@ interface JumpCutTimelineProps {
   playheadTime: number;
   onPlayheadTimeChange: (timeSeconds: number) => void;
   isNodeViewOpen?: boolean;
+  onToggleNodeView?: () => void;
 }
 
-export function JumpCutTimeline({ onCutsChange, durations, clipTrimStart, clipTrimEnd, onTrimChange, playheadTime, onPlayheadTimeChange, isNodeViewOpen = false }: JumpCutTimelineProps) {
+export function JumpCutTimeline({ onCutsChange, durations, clipTrimStart, clipTrimEnd, onTrimChange, playheadTime, onPlayheadTimeChange, isNodeViewOpen = false, onToggleNodeView }: JumpCutTimelineProps) {
   const [currentCutIndex, setCurrentCutIndex] = useState(0);
   const [showPreview, setShowPreview] = useState(false);
   const [completedCuts, setCompletedCuts] = useState<number[]>([]);
   const [customCutPositions, setCustomCutPositions] = useState<Record<number, number>>({});
   const [clipStartPositions, setClipStartPositions] = useState<Record<number, number>>({});
   const [hoveredPosition, setHoveredPosition] = useState<number | null>(null);
+  const [timelineClickedOnce, setTimelineClickedOnce] = useState(false);
   const [scrollLeft, setScrollLeft] = useState(0);
   const [zoom, setZoom] = useState(0.01);
   const [containerWidth, setContainerWidth] = useState(0);
@@ -210,8 +211,31 @@ export function JumpCutTimeline({ onCutsChange, durations, clipTrimStart, clipTr
     return (endCutAbsolutePosition + nextClipStartAbsolutePosition) / 2;
   }, [currentCutIndex, clips]);
 
+  // Left/right boundaries of the cut region (for dashed playheads and darkened strip)
+  const cutBoundaryPositions = useMemo(() => {
+    if (currentCutIndex >= jumpCuts.length) return null;
+    const cut = jumpCuts[currentCutIndex];
+    const clip = clips[cut.clipIndex] as { left: number; fullWidth?: number };
+    const nextClip = clips[cut.clipIndex + 1] as { left: number; fullWidth?: number } | undefined;
+    if (!nextClip) return null;
+    const fullW = clip.fullWidth ?? 0;
+    const nextFullW = nextClip.fullWidth ?? 0;
+    const left = clip.left + (cut.endCutPosition / baseClips[cut.clipIndex].originalWidth) * fullW;
+    const right = nextClip.left + (cut.nextClipStartPosition / baseClips[cut.clipIndex + 1].originalWidth) * nextFullW;
+    return { left, right };
+  }, [currentCutIndex, clips]);
+
   const isComplete = currentCutIndex >= jumpCuts.length;
   const currentCut = jumpCuts[currentCutIndex];
+
+  // Cut is "on screen" if it's within the visible viewport (with margins)
+  const cutIsOnScreen = useMemo(() => {
+    if (currentCutPosition == null || containerWidth <= 0) return false;
+    return currentCutPosition >= scrollLeft + 100 && currentCutPosition <= scrollLeft + containerWidth - 200;
+  }, [currentCutPosition, scrollLeft, containerWidth]);
+
+  // When cut is on screen, skip "to jump" and show "to cut" directly; otherwise jump then cut
+  const showCutPhase = cutIsOnScreen || showPreview;
 
   // Helper to save state to history (for C-key split; trim passed through)
   const saveToHistory = (
@@ -264,11 +288,15 @@ export function JumpCutTimeline({ onCutsChange, durations, clipTrimStart, clipTr
   const handleTabAction = () => {
     if (isComplete) return;
     
+    // If cut is already on screen, first Tab does the cut; otherwise first Tab jumps, second Tab cuts
+    if (cutIsOnScreen) {
+      // Cut is visible: Tab applies the cut directly
+      applyCurrentCut();
+      return;
+    }
     if (!showPreview) {
-      // First Tab: Jump to the cut and show preview
+      // Cut is off screen: First Tab jumps to the cut and shows preview
       setShowPreview(true);
-      
-      // Scroll to the cut position
       if (scrollContainerRef.current && currentCutPosition) {
         const scrollPosition = currentCutPosition - 400;
         scrollContainerRef.current.scrollTo({
@@ -276,47 +304,52 @@ export function JumpCutTimeline({ onCutsChange, durations, clipTrimStart, clipTr
           behavior: 'smooth'
         });
       }
-    } else {
-      // Second Tab: Make the cut (apply trim so playback actually cuts)
-      const ci = currentCut.clipIndex;
-      const nextIdx = ci + 1;
-      const endSec = (currentCut.endCutPosition / baseClips[ci].originalWidth) * fullDurations[ci];
-      const nextStartSec = nextIdx < baseClips.length
-        ? (currentCut.nextClipStartPosition / baseClips[nextIdx].originalWidth) * fullDurations[nextIdx]
-        : 0;
-      const newTrimStart = [...clipTrimStart];
-      const newTrimEnd = [...clipTrimEnd];
-      newTrimEnd[ci] = endSec;
-      if (nextIdx < 5) newTrimStart[nextIdx] = nextStartSec;
-
-      const newCompletedCuts = [...completedCuts, ci];
-      const newCurrentCutIndex = currentCutIndex + 1;
-      const newClipStartPositions = { ...clipStartPositions };
-      if (nextIdx < baseClips.length) {
-        newClipStartPositions[nextIdx] = currentCut.nextClipStartPosition / baseClips[nextIdx].originalWidth;
-      }
-
-      // Push state BEFORE cut so undo restores it
-      const beforeState = {
-        completedCuts,
-        currentCutIndex,
-        customCutPositions,
-        clipStartPositions,
-        manualSplits,
-        trimStart: clipTrimStart,
-        trimEnd: clipTrimEnd,
-      };
-      const newHistory = history.slice(0, historyIndex + 1);
-      newHistory.push(beforeState);
-      setHistory(newHistory);
-      setHistoryIndex(newHistory.length - 1);
-      setCompletedCuts(newCompletedCuts);
-      setCurrentCutIndex(newCurrentCutIndex);
-      setClipStartPositions(newClipStartPositions);
-      onTrimChange(newTrimStart, newTrimEnd);
-      onCutsChange(newCompletedCuts);
-      setShowPreview(false);
+      return;
     }
+    // Second Tab (cut was off screen, we jumped, now cut)
+    applyCurrentCut();
+  };
+
+  const applyCurrentCut = () => {
+    if (currentCutIndex >= jumpCuts.length) return;
+    const cut = jumpCuts[currentCutIndex];
+    const ci = cut.clipIndex;
+    const nextIdx = ci + 1;
+    const endSec = (cut.endCutPosition / baseClips[ci].originalWidth) * fullDurations[ci];
+    const nextStartSec = nextIdx < baseClips.length
+      ? (cut.nextClipStartPosition / baseClips[nextIdx].originalWidth) * fullDurations[nextIdx]
+      : 0;
+    const newTrimStart = [...clipTrimStart];
+    const newTrimEnd = [...clipTrimEnd];
+    newTrimEnd[ci] = endSec;
+    if (nextIdx < 5) newTrimStart[nextIdx] = nextStartSec;
+
+    const newCompletedCuts = [...completedCuts, ci];
+    const newCurrentCutIndex = currentCutIndex + 1;
+    const newClipStartPositions = { ...clipStartPositions };
+    if (nextIdx < baseClips.length) {
+      newClipStartPositions[nextIdx] = cut.nextClipStartPosition / baseClips[nextIdx].originalWidth;
+    }
+
+    const beforeState = {
+      completedCuts,
+      currentCutIndex,
+      customCutPositions,
+      clipStartPositions,
+      manualSplits,
+      trimStart: clipTrimStart,
+      trimEnd: clipTrimEnd,
+    };
+    const newHistory = history.slice(0, historyIndex + 1);
+    newHistory.push(beforeState);
+    setHistory(newHistory);
+    setHistoryIndex(newHistory.length - 1);
+    setCompletedCuts(newCompletedCuts);
+    setCurrentCutIndex(newCurrentCutIndex);
+    setClipStartPositions(newClipStartPositions);
+    onTrimChange(newTrimStart, newTrimEnd);
+    onCutsChange(newCompletedCuts);
+    setShowPreview(false);
   };
 
   useEffect(() => {
@@ -380,7 +413,7 @@ export function JumpCutTimeline({ onCutsChange, durations, clipTrimStart, clipTr
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentCutIndex, showPreview, completedCuts, currentCut, isComplete, currentCutPosition, history, historyIndex, hoveredPosition, clips, playheadPosition]);
+  }, [currentCutIndex, showPreview, cutIsOnScreen, completedCuts, currentCut, isComplete, currentCutPosition, history, historyIndex, hoveredPosition, clips, playheadPosition]);
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
     if (!e.ctrlKey && !e.metaKey) return;
@@ -423,6 +456,17 @@ export function JumpCutTimeline({ onCutsChange, durations, clipTrimStart, clipTr
       onTouchCancel={handleTouchEnd}
       style={{ touchAction: 'pan-x pinch-zoom' }}
     >
+      {/* Canvas / workflow view button – top-right of timeline */}
+      {onToggleNodeView && (
+        <button
+          onClick={onToggleNodeView}
+          className="absolute top-2 right-2 z-40 w-8 h-8 flex items-center justify-center rounded bg-[#25252a] hover:bg-[#323436] transition-colors text-[#bcbcbe] hover:text-white cursor-pointer"
+          title="Workflow / Canvas view"
+        >
+          <Workflow className="size-4" />
+        </button>
+      )}
+
       <div className="relative h-full" style={{ minWidth: totalWidthPx }} ref={timelineRef}>
         {/* Timeline rulers – actual time */}
         <TimelineRulers totalDurationSec={totalDurationSec} timeToPixel={timeToPixel} />
@@ -434,12 +478,7 @@ export function JumpCutTimeline({ onCutsChange, durations, clipTrimStart, clipTr
         
         {/* Video clips: 1st, 3rd, 5th on top reel; 2nd, 4th on middle reel */}
         {clips.map((clip, index) => {
-          const isCurrentCutClip = showPreview && currentCut?.clipIndex === index;
-          const isNextCutClip = showPreview && currentCut?.clipIndex === index - 1;
           const reel = index % 2;
-          const fullW = (clip as { fullWidth?: number }).fullWidth ?? clip.width;
-          const endCutPx = isCurrentCutClip ? (currentCut.endCutPosition / baseClips[index].originalWidth) * fullW : undefined;
-          const startCutPx = isNextCutClip ? (currentCut.nextClipStartPosition / baseClips[index].originalWidth) * fullW : undefined;
           return (
             <VideoClip
               key={clip.id}
@@ -448,18 +487,19 @@ export function JumpCutTimeline({ onCutsChange, durations, clipTrimStart, clipTr
               width={clip.width}
               title={clip.title}
               color={clip.color}
-              showEndCutPreview={isCurrentCutClip}
-              endCutPosition={endCutPx}
-              showStartCutPreview={isNextCutClip}
-              startCutPosition={startCutPx}
               isNodeViewOpen={isNodeViewOpen}
               reel={reel}
             />
           );
         })}
         
-        {/* Script/dialogue track */}
-        <ScriptTrack clips={clips} hoveredPosition={hoveredPosition} />
+        {/* Script/dialogue track (video clips with words) – highlight word at hover or at cut lines when cut phase active */}
+        <ScriptTrack
+          clips={clips}
+          hoveredPosition={hoveredPosition}
+          cutPreviews={[]}
+          cutHighlightPositions={timelineClickedOnce && showCutPhase && cutBoundaryPositions ? { left: cutBoundaryPositions.left, right: cutBoundaryPositions.right } : null}
+        />
         
         {/* Playhead */}
         <Playhead position={playheadPosition} />
@@ -467,6 +507,23 @@ export function JumpCutTimeline({ onCutsChange, durations, clipTrimStart, clipTr
         {/* Hover ghost playhead */}
         {hoveredPosition !== null && (
           <Playhead position={hoveredPosition} ghost />
+        )}
+
+        {/* Cut preview: darkened strip between cut boundaries + two dashed ghost playheads (all tracks) */}
+        {timelineClickedOnce && showCutPhase && cutBoundaryPositions && (
+          <>
+            <div
+              className="absolute bottom-0 pointer-events-none z-10"
+              style={{
+                left: `${cutBoundaryPositions.left}px`,
+                width: `${cutBoundaryPositions.right - cutBoundaryPositions.left}px`,
+                height: '184px',
+                backgroundColor: 'rgba(0,0,0,0.4)'
+              }}
+            />
+            <DashedGhostPlayhead position={cutBoundaryPositions.left} />
+            <DashedGhostPlayhead position={cutBoundaryPositions.right} />
+          </>
         )}
         
         {/* Hover detection zones + click to seek (content coords = scrollLeft + viewport x) */}
@@ -481,18 +538,19 @@ export function JumpCutTimeline({ onCutsChange, durations, clipTrimStart, clipTr
           }}
           onMouseLeave={() => setHoveredPosition(null)}
           onClick={() => {
+            setTimelineClickedOnce(true);
             if (hoveredPosition !== null) onPlayheadTimeChange(pixelToTime(hoveredPosition));
           }}
         />
       </div>
       
-      {/* Jump cut indicator - fixed position when out of view */}
-      {!isComplete && currentCutPosition && scrollContainerRef.current && (
+      {/* Jump cut indicator - only after first timeline click; fixed position when out of view */}
+      {timelineClickedOnce && !isComplete && currentCutPosition && scrollContainerRef.current && (
         <JumpCutIndicator 
           position={currentCutPosition}
           scrollLeft={scrollLeft}
           viewportWidth={scrollContainerRef.current.clientWidth}
-          showPreview={showPreview}
+          showCutPhase={showCutPhase}
           onTabAction={handleTabAction}
         />
       )}
@@ -559,15 +617,11 @@ interface VideoClipProps {
   width: number;
   title: string;
   color: 'blue' | 'purple' | 'green' | 'orange' | 'teal';
-  showEndCutPreview?: boolean;
-  endCutPosition?: number;
-  showStartCutPreview?: boolean;
-  startCutPosition?: number;
   isNodeViewOpen?: boolean;
   reel?: number; // 0 = top track, 1 = middle track
 }
 
-function VideoClip({ clipId, left, width, title, color, showEndCutPreview, endCutPosition, showStartCutPreview, startCutPosition, isNodeViewOpen = false, reel = 0 }: VideoClipProps) {
+function VideoClip({ clipId, left, width, title, color, isNodeViewOpen = false, reel = 0 }: VideoClipProps) {
   const colors = {
     blue: { bg: '#1c77e9', border: '#6298ec' },
     purple: { bg: '#564aac', border: '#9287e2' },
@@ -609,48 +663,6 @@ function VideoClip({ clipId, left, width, title, color, showEndCutPreview, endCu
             </div>
           </div>
           <div className="absolute border border-solid inset-0 pointer-events-none" style={{ borderColor: border, borderWidth: '0.5px' }} />
-
-          {/* Preview: Dashed line and ghosted cut-off section */}
-          {showEndCutPreview && endCutPosition && (
-            <>
-              {/* Dashed cut line */}
-              <div
-                className="absolute bottom-0 top-0 w-[2px]"
-                style={{
-                  left: `${endCutPosition}px`,
-                  background: 'repeating-linear-gradient(to bottom, #fff 0px, #fff 4px, transparent 4px, transparent 8px)'
-                }}
-              />
-              {/* Ghosted section to be cut */}
-              <div
-                className="absolute bottom-0 top-0 bg-black/40"
-                style={{
-                  left: `${endCutPosition}px`,
-                  right: 0
-                }}
-              />
-            </>
-          )}
-          {showStartCutPreview && startCutPosition && (
-            <>
-              {/* Dashed cut line */}
-              <div
-                className="absolute bottom-0 top-0 w-[2px]"
-                style={{
-                  left: `${startCutPosition}px`,
-                  background: 'repeating-linear-gradient(to bottom, #fff 0px, #fff 4px, transparent 4px, transparent 8px)'
-                }}
-              />
-              {/* Ghosted section to be cut */}
-              <div
-                className="absolute bottom-0 top-0 bg-black/40"
-                style={{
-                  left: 0,
-                  width: `${startCutPosition}px`
-                }}
-              />
-            </>
-          )}
         </motion.div>
       </div>
     </>
@@ -704,41 +716,53 @@ function Playhead({ position, ghost = false }: { position: number; ghost?: boole
   );
 }
 
-function JumpCutIndicator({ position, scrollLeft, viewportWidth, showPreview, onTabAction }: { position: number; scrollLeft: number; viewportWidth: number; showPreview: boolean; onTabAction: () => void }) {
+/** Dashed cut line (no head) for cut boundaries – spans all tracks. */
+function DashedGhostPlayhead({ position }: { position: number }) {
+  return (
+    <div
+      className="absolute bottom-0 h-[184px] w-0 flex items-center justify-center pointer-events-none z-10"
+      style={{ left: `${position}px`, opacity: 0.3 }}
+    >
+      <div className="flex-none rotate-90 w-[184px]">
+        <svg className="block size-full" fill="none" preserveAspectRatio="none" viewBox="0 0 184 1">
+          <line stroke="#FCFCFC" strokeDasharray="4 4" x2="184" y1="0.5" y2="0.5" />
+        </svg>
+      </div>
+    </div>
+  );
+}
+
+function JumpCutIndicator({ position, scrollLeft, viewportWidth, showCutPhase, onTabAction }: { position: number; scrollLeft: number; viewportWidth: number; showCutPhase: boolean; onTabAction: () => void }) {
   // Determine if the cut position is out of view
   const isOffscreenRight = position > scrollLeft + viewportWidth - 200;
   const isOffscreenLeft = position < scrollLeft + 100;
   
-  const text = showPreview ? 'to cut' : 'to jump cut';
+  const text = showCutPhase ? 'to cut' : 'to jump';
   
   // Calculate the actual display position (relative to timeline, not viewport)
   let displayPosition: number;
   
+  const isOnScreen = !isOffscreenRight && !isOffscreenLeft;
   if (isOffscreenRight) {
-    // Position at right edge of visible area (leave more margin)
     displayPosition = scrollLeft + viewportWidth - 170;
   } else if (isOffscreenLeft) {
-    // Position at left edge of visible area
     displayPosition = scrollLeft + 20;
   } else {
-    // Normal position - centered at the actual cut location
-    // For "to cut" state, adjust for smaller width (~55px half)
-    // For "to jump cut" state, adjust for larger width (~70px half)
-    displayPosition = position - (showPreview ? 55 : 70);
+    displayPosition = position; // center of pill will be at position via translateX(-50%)
   }
   
   return (
     <div 
-      className="absolute bottom-[110px] h-[28px] flex items-center justify-center pointer-events-auto z-30 cursor-pointer hover:opacity-90 transition-opacity"
+      className="absolute bottom-[158px] h-[28px] flex items-center justify-center pointer-events-auto z-30 cursor-pointer hover:opacity-90 transition-opacity"
       style={{ 
         left: `${displayPosition}px`,
-        animation: 'bounce-horizontal 2s ease-in-out infinite',
-        width: showPreview ? 'auto' : '140px'
+        width: showCutPhase ? 'auto' : '140px',
+        ...(isOnScreen ? { transform: 'translateX(-50%)' } : {})
       }}
       onClick={onTabAction}
     >
-      {/* Indicator box - based on Figma design */}
-      <div className="bg-[#323436] content-stretch flex gap-[6px] items-center overflow-clip pl-[6px] py-[3px] relative rounded-[4px] h-full" style={{ paddingRight: showPreview ? '6px' : '12px' }}>
+      {/* Indicator box */}
+      <div className="bg-[#323436] content-stretch flex gap-[6px] items-center overflow-clip pl-[6px] py-[3px] relative rounded-[4px] h-full" style={{ paddingRight: showCutPhase ? '6px' : '12px' }}>
         {/* TAB key background */}
         <div className="relative bg-[#1f1f1f] h-[21px] rounded-[4px] w-[29px] flex items-center justify-center">
           <div aria-hidden="true" className="absolute border border-[#353535] border-solid inset-[-0.5px] pointer-events-none rounded-[4.5px]" />
@@ -748,19 +772,8 @@ function JumpCutIndicator({ position, scrollLeft, viewportWidth, showPreview, on
         {/* Text */}
         <p className="font-['Inter:Medium',sans-serif] font-medium leading-[18px] not-italic opacity-80 overflow-hidden relative shrink-0 text-[12px] text-ellipsis text-white whitespace-nowrap">{text}</p>
         
-        {/* Scissors icon */}
-        <div className="relative shrink-0 size-[12px]">
-          <svg className="block size-full" fill="none" preserveAspectRatio="none" viewBox="0 0 12 12">
-            <path d={scissorsSvgPaths.p127a4d00} stroke="#639BEC" strokeLinecap="round" strokeLinejoin="round" />
-            <path d="M4.06 4.06L6 6" stroke="#639BEC" strokeLinecap="round" strokeLinejoin="round" />
-            <path d="M10 2L4.06 7.94" stroke="#639BEC" strokeLinecap="round" strokeLinejoin="round" />
-            <path d={scissorsSvgPaths.p3fc39080} stroke="#639BEC" strokeLinecap="round" strokeLinejoin="round" />
-            <path d="M7.4 7.4L10 10" stroke="#639BEC" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </div>
-        
-        {/* Blue vertical bar on the right - only show when NOT in preview mode */}
-        {!showPreview && (
+        {/* Blue vertical bar on the right - only show when in "to jump" mode */}
+        {!showCutPhase && (
           <div className="absolute bottom-[3px] flex items-center justify-center right-[6px] top-[3px] w-0">
             <div className="flex-none h-px rotate-90 w-[22px]">
               <div className="relative size-full">
@@ -774,17 +787,6 @@ function JumpCutIndicator({ position, scrollLeft, viewportWidth, showPreview, on
           </div>
         )}
       </div>
-      
-      <style>{`
-        @keyframes bounce-horizontal {
-          0%, 100% {
-            transform: translateX(0px);
-          }
-          50% {
-            transform: translateX(4px);
-          }
-        }
-      `}</style>
     </div>
   );
 }
@@ -802,7 +804,14 @@ interface ClipWithLayout {
   isCut: boolean;
 }
 
-function ScriptTrack({ clips, hoveredPosition }: { clips: ClipWithLayout[]; hoveredPosition: number | null }) {
+interface CutPreview {
+  showEndCutPreview: boolean;
+  endCutPosition?: number;
+  showStartCutPreview: boolean;
+  startCutPosition?: number;
+}
+
+function ScriptTrack({ clips, hoveredPosition, cutPreviews, cutHighlightPositions }: { clips: ClipWithLayout[]; hoveredPosition: number | null; cutPreviews: CutPreview[]; cutHighlightPositions: { left: number; right: number } | null }) {
   return (
     <>
       {/* Track background */}
@@ -810,21 +819,38 @@ function ScriptTrack({ clips, hoveredPosition }: { clips: ClipWithLayout[]; hove
         <div className="absolute border border-[#2a2a2e] border-solid inset-[-0.5px] pointer-events-none" />
       </div>
 
-      {/* Transcript segments per clip */}
-      {clips.map((clip) => (
-        <ScriptSegment
-          key={clip.id}
-          left={clip.left}
-          width={clip.width}
-          text={clip.transcript}
-          hoveredPosition={hoveredPosition}
-        />
-      ))}
+      {/* Transcript segments – highlight word at hover (takes over) or at cut lines when cut phase active */}
+      {clips.map((clip, index) => {
+        const segmentLeft = clip.left;
+        const segmentRight = clip.left + clip.width;
+        // Hover takes over when active; else show cut-line highlights when cut phase is on
+        const highlightPosition =
+          hoveredPosition !== null && hoveredPosition >= segmentLeft && hoveredPosition < segmentRight
+            ? hoveredPosition
+            : cutHighlightPositions && cutHighlightPositions.left >= segmentLeft && cutHighlightPositions.left < segmentRight
+              ? cutHighlightPositions.left
+              : cutHighlightPositions && cutHighlightPositions.right >= segmentLeft && cutHighlightPositions.right < segmentRight
+                ? cutHighlightPositions.right
+                : null;
+        return (
+          <ScriptSegment
+            key={clip.id}
+            left={segmentLeft}
+            width={clip.width}
+            text={clip.transcript}
+            highlightPosition={highlightPosition}
+            showEndCutPreview={cutPreviews[index]?.showEndCutPreview}
+            endCutPosition={cutPreviews[index]?.endCutPosition}
+            showStartCutPreview={cutPreviews[index]?.showStartCutPreview}
+            startCutPosition={cutPreviews[index]?.startCutPosition}
+          />
+        );
+      })}
     </>
   );
 }
 
-function ScriptSegment({ left, width, text, hoveredPosition }: { left: number; width: number; text: string; hoveredPosition: number | null }) {
+function ScriptSegment({ left, width, text, highlightPosition, showEndCutPreview, endCutPosition, showStartCutPreview, startCutPosition }: { left: number; width: number; text: string; highlightPosition: number | null; showEndCutPreview?: boolean; endCutPosition?: number; showStartCutPreview?: boolean; startCutPosition?: number }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const wordEls = useRef<Map<number, HTMLSpanElement>>(new Map());
@@ -847,11 +873,11 @@ function ScriptSegment({ left, width, text, hoveredPosition }: { left: number; w
     });
   }, [words, totalChars]);
 
-  const isHovered = hoveredPosition !== null && hoveredPosition >= left && hoveredPosition < left + width;
+  const isHighlighted = highlightPosition !== null && highlightPosition >= left && highlightPosition < left + width;
 
-  const hoveredWordIndex = useMemo(() => {
-    if (!isHovered || hoveredPosition === null) return -1;
-    const frac = (hoveredPosition - left) / width;
+  const highlightedWordIndex = useMemo(() => {
+    if (!isHighlighted || highlightPosition === null) return -1;
+    const frac = (highlightPosition - left) / width;
     let closest = 0;
     let closestDist = Infinity;
     for (let i = 0; i < wordPositions.length; i++) {
@@ -862,7 +888,7 @@ function ScriptSegment({ left, width, text, hoveredPosition }: { left: number; w
       }
     }
     return closest;
-  }, [isHovered, hoveredPosition, left, width, wordPositions]);
+  }, [isHighlighted, highlightPosition, left, width, wordPositions]);
 
   // Measure container width
   useLayoutEffect(() => {
@@ -871,12 +897,13 @@ function ScriptSegment({ left, width, text, hoveredPosition }: { left: number; w
     }
   }, [width]);
 
-  // Position highlighted word just to the right of the ghost playhead
+  // Position highlighted word to the right of the playhead/cut line, or to the left when too close to the right edge
   const contentPadding = 8; // px-2 on the inner div
+  const gap = 6;
   useLayoutEffect(() => {
     const scrollEl = scrollRef.current;
     const containerEl = containerRef.current;
-    if (!scrollEl || !containerEl || hoveredWordIndex < 0 || hoveredPosition === null) {
+    if (!scrollEl || !containerEl || highlightedWordIndex < 0 || highlightPosition === null) {
       if (scrollEl) scrollEl.style.transform = 'translateX(0)';
       return;
     }
@@ -884,27 +911,29 @@ function ScriptSegment({ left, width, text, hoveredPosition }: { left: number; w
     const available = containerEl.clientWidth - contentPadding * 2;
     const contentWidth = scrollEl.scrollWidth;
 
-    // If all words fit, position word to the right of playhead (no scroll)
-    const wordEl = wordEls.current.get(hoveredWordIndex);
+    const wordEl = wordEls.current.get(highlightedWordIndex);
     if (!wordEl) return;
 
-    // Ghost playhead position in segment-local coords; content area starts at contentPadding
-    const playheadInContent = hoveredPosition - left - contentPadding;
-    const gap = 6; // space between playhead and highlighted word
-    const targetWordLeft = playheadInContent + gap;
+    const playheadInContent = highlightPosition - left - contentPadding;
+    const wordWidth = wordEl.offsetWidth;
+    const spaceToRightOfLine = width - (highlightPosition - left);
+
+    const putWordOnLeft = spaceToRightOfLine < wordWidth + gap;
+    const targetWordLeft = putWordOnLeft
+      ? playheadInContent - gap - wordWidth
+      : playheadInContent + gap;
 
     let target: number;
     if (contentWidth <= available) {
       target = 0;
     } else {
-      // translateX so the word's left edge is at targetWordLeft in the visible area
       target = targetWordLeft - wordEl.offsetLeft;
       const minTranslate = -(contentWidth - available);
       target = Math.max(minTranslate, Math.min(0, target));
     }
 
     scrollEl.style.transform = `translateX(${target}px)`;
-  }, [hoveredWordIndex, hoveredPosition, left]);
+  }, [highlightedWordIndex, highlightPosition, left, width]);
 
   // Center-ellipsis text for non-hovered state
   const centerEllipsisText = useMemo(() => {
@@ -923,7 +952,7 @@ function ScriptSegment({ left, width, text, hoveredPosition }: { left: number; w
     return text.substring(0, frontChars) + '\u2026' + text.substring(text.length - backChars);
   }, [text, containerWidth]);
 
-  const showWords = isHovered && hoveredWordIndex >= 0;
+  const showWords = isHighlighted && highlightedWordIndex >= 0;
 
   return (
     <div
@@ -931,6 +960,37 @@ function ScriptSegment({ left, width, text, hoveredPosition }: { left: number; w
       className="absolute bottom-[24px] h-[34px] overflow-hidden rounded border border-[#353535] bg-[#2a2a2e]"
       style={{ left: `${left}px`, width: `${width}px` }}
     >
+      {/* Cut preview: dotted line and ghosted section (script track = video clips) */}
+      {showEndCutPreview && endCutPosition != null && (
+        <>
+          <div
+            className="absolute bottom-0 top-0 w-[2px] pointer-events-none"
+            style={{
+              left: `${endCutPosition}px`,
+              background: 'repeating-linear-gradient(to bottom, #fff 0px, #fff 4px, transparent 4px, transparent 8px)'
+            }}
+          />
+          <div
+            className="absolute bottom-0 top-0 bg-black/40 pointer-events-none"
+            style={{ left: `${endCutPosition}px`, right: 0 }}
+          />
+        </>
+      )}
+      {showStartCutPreview && startCutPosition != null && (
+        <>
+          <div
+            className="absolute bottom-0 top-0 w-[2px] pointer-events-none"
+            style={{
+              left: `${startCutPosition}px`,
+              background: 'repeating-linear-gradient(to bottom, #fff 0px, #fff 4px, transparent 4px, transparent 8px)'
+            }}
+          />
+          <div
+            className="absolute bottom-0 top-0 bg-black/40 pointer-events-none"
+            style={{ left: 0, width: `${startCutPosition}px` }}
+          />
+        </>
+      )}
       <div className="flex items-center h-full px-2 overflow-hidden rounded-[inherit]">
         {showWords ? (
           <div
@@ -939,7 +999,7 @@ function ScriptSegment({ left, width, text, hoveredPosition }: { left: number; w
             style={{ transition: 'transform 120ms ease-out' }}
           >
             {words.map((word, i) => {
-              const isHighlighted = i === hoveredWordIndex;
+              const isWordHighlighted = i === highlightedWordIndex;
               const setRef = (el: HTMLSpanElement | null) => {
                 if (el) wordEls.current.set(i, el);
                 else wordEls.current.delete(i);
@@ -949,15 +1009,15 @@ function ScriptSegment({ left, width, text, hoveredPosition }: { left: number; w
                   style={{
                     fontFamily: 'Inter, sans-serif',
                     fontSize: '13px',
-                    color: isHighlighted ? '#fff' : '#888',
-                    fontWeight: isHighlighted ? 500 : 400,
+                    color: isWordHighlighted ? '#fff' : '#888',
+                    fontWeight: isWordHighlighted ? 500 : 400,
                     transition: 'color 100ms',
                   }}
                 >
                   {word}
                 </span>
               );
-              return isHighlighted ? (
+              return isWordHighlighted ? (
                 <span
                   key={i}
                   ref={setRef}

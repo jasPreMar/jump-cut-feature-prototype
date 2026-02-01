@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { LayoutGrid } from "lucide-react";
+import { Type, Voicemail, Maximize, Pause, EllipsisVertical } from "lucide-react";
 import svgPaths from "@/imports/svg-mbvhuxpq3m";
 import image1 from "../../assets/4ade86ef9dac706bb3957bd6282d330df1e57c89.png";
 import image2 from "../../assets/c4945bd878c904a44e42b756d4a58bd0d542132d.png";
@@ -9,7 +9,6 @@ import { VIDEO_SOURCES } from "@/app/constants/videos";
 
 export function VideoEditor({
   completedCuts,
-  onToggleNodeView,
   playheadTime,
   onPlayheadTimeChange,
   durations,
@@ -20,7 +19,6 @@ export function VideoEditor({
   onPlayPause,
 }: {
   completedCuts: number[];
-  onToggleNodeView?: () => void;
   playheadTime: number;
   onPlayheadTimeChange: (timeSeconds: number) => void;
   durations: number[];
@@ -35,7 +33,6 @@ export function VideoEditor({
       <ChatPanel />
       <VideoPreview
         completedCuts={completedCuts}
-        onToggleNodeView={onToggleNodeView}
         playheadTime={playheadTime}
         onPlayheadTimeChange={onPlayheadTimeChange}
         durations={durations}
@@ -277,7 +274,6 @@ function formatTime(seconds: number): string {
 
 function VideoPreview({
   completedCuts,
-  onToggleNodeView,
   playheadTime,
   onPlayheadTimeChange,
   durations,
@@ -288,7 +284,6 @@ function VideoPreview({
   onPlayPause,
 }: {
   completedCuts: number[];
-  onToggleNodeView?: () => void;
   playheadTime: number;
   onPlayheadTimeChange: (timeSeconds: number) => void;
   durations: number[];
@@ -360,8 +355,8 @@ function VideoPreview({
     const end = trimEndRef.current[i] ?? video.duration;
     const t = Math.max(start, Math.min(end, start + currentTimeInClipRef.current));
     video.currentTime = t;
+    video.pause(); // always pause on load to prevent autoplay
     if (isPlaying) video.play().catch(() => {});
-    else video.pause();
   }, [isPlaying]);
 
   // Sync video to playhead: when paused, seek to trimStart[clip] + timeInClip. When playing, never seek (causes jumpiness).
@@ -500,77 +495,63 @@ function VideoPreview({
         </div>
       </div>
 
-      {/* Controls bar */}
+      {/* Controls bar: Play + time on left, three icon buttons in center */}
       <div className="shrink-0 flex items-center gap-3 pt-2 px-1">
-        {/* Shuffle button */}
-        <button className="bg-[#181a1f] hover:bg-[#22242a] transition-colors rounded px-3 py-1 flex items-center gap-1.5 cursor-pointer">
-          <ShuffleIcon />
-          <span className="text-[#f2f3f7] text-sm tracking-tight">
-            Shuffle Content
-          </span>
-        </button>
-
-        <div className="flex-1" />
-
-        {/* Playhead time */}
-        <div className="flex items-center gap-0.5 text-sm tracking-wide font-mono">
-          <span className="text-[#ddd]">{formatTime(timeInClip)}</span>
-          <span className="text-[#777]">/ {formatTime(totalDuration)}</span>
-        </div>
-
-        <div className="flex-1" />
-
-        {/* Right controls */}
-        <div className="flex items-center gap-4">
-          {/* Play/Pause button */}
+        {/* Left: Play button + time right next to it */}
+        <div className="flex items-center gap-2">
           <button
             onClick={onPlayPause}
-            className="bg-[#25252a] hover:bg-[#35353a] transition-colors rounded-sm px-3 py-1 cursor-pointer"
+            className="bg-[#25252a] hover:bg-[#35353a] transition-colors rounded-sm p-2 cursor-pointer text-[#f0f0f3] flex items-center justify-center"
             title="Play/Pause (Space)"
           >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 54 28"
-              fill="none"
-              className="block"
-            >
-              <path d={svgPaths.pd0a8b00} fill="#F0F0F3" />
-            </svg>
+            {isPlaying ? (
+              <Pause className="size-5 shrink-0" />
+            ) : (
+              /* Filled play triangle – viewBox fits path bounds so it fills the icon */
+              <svg width="20" height="20" viewBox="19.5 5.5 15 17" fill="none" className="block shrink-0">
+                <path d={svgPaths.pd0a8b00} fill="currentColor" />
+              </svg>
+            )}
           </button>
+          <div className="flex items-center gap-0.5 text-sm tracking-wide font-mono">
+            <span className="text-[#ddd]">{formatTime(timeInClip)}</span>
+            <span className="text-[#777]">/ {formatTime(totalDuration)}</span>
+          </div>
+        </div>
 
+        <div className="flex-1" />
+
+        {/* Center: three icon buttons (Type, Voicemail, Maximize) */}
+        <div className="flex items-center gap-1">
           <button
-            className="text-[#bcbcbe] hover:text-white transition-colors cursor-pointer"
-            title="AI Assist"
+            className="w-8 h-8 flex items-center justify-center rounded bg-[#25252a] hover:bg-[#323436] transition-colors text-[#bcbcbe] hover:text-white cursor-pointer"
+            title="Text"
           >
-            <AIIcon />
+            <Type className="size-4" />
           </button>
           <button
-            className="text-[#bcbcbe] hover:text-white transition-colors cursor-pointer"
-            title="Capture"
+            className="w-8 h-8 flex items-center justify-center rounded bg-[#25252a] hover:bg-[#323436] transition-colors text-[#bcbcbe] hover:text-white cursor-pointer"
+            title="Voicemail"
           >
-            <CaptureIcon />
+            <Voicemail className="size-4" />
           </button>
           <button
-            className="text-[#bcbcbe] hover:text-white transition-colors cursor-pointer"
-            title="Screen"
+            className="w-8 h-8 flex items-center justify-center rounded bg-[#25252a] hover:bg-[#323436] transition-colors text-[#bcbcbe] hover:text-white cursor-pointer"
+            title="Fullscreen"
           >
-            <ScreenIcon />
-          </button>
-          <button
-            onClick={onToggleNodeView}
-            className="text-[#bcbcbe] hover:text-white transition-colors cursor-pointer"
-            title="Effects"
-          >
-            <LayoutGrid className="size-[18px]" />
-          </button>
-          <button
-            className="text-[#bdbdbf] hover:text-white transition-colors cursor-pointer"
-            title="More options"
-          >
-            <MoreIcon />
+            <Maximize className="size-4" />
           </button>
         </div>
+
+        <div className="flex-1" />
+
+        {/* Right: ellipsis vertical */}
+        <button
+          className="w-8 h-8 flex items-center justify-center rounded bg-[#25252a] hover:bg-[#323436] transition-colors text-[#bcbcbe] hover:text-white cursor-pointer"
+          title="More options"
+        >
+          <EllipsisVertical className="size-4" />
+        </button>
       </div>
     </div>
   );
