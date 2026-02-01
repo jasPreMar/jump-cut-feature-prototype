@@ -84,7 +84,11 @@ export function JumpCutTimeline({ onCutsChange, durations, clipTrimStart, clipTr
     { id: 7, title: "Clip 8", color: "green", originalWidth: 400, transcript: "the most complex bugs. First, you need to define an issue to an agent. You need to select debug mode, and you need to submit your prompt. The agent will then" },
   ];
 
-  const jumpCuts: JumpCut[] = [];
+  const jumpCuts: JumpCut[] = [
+    { id: 1, clipIndex: 0, endCutPosition: 170, nextClipStartPosition: 100 },
+    { id: 2, clipIndex: 2, endCutPosition: 500, nextClipStartPosition: 100 },
+    { id: 3, clipIndex: 5, endCutPosition: 300, nextClipStartPosition: 80 },
+  ];
 
   // Full durations (for converting cut positions to seconds)
   const fullDurations = useMemo(() => {
@@ -517,7 +521,7 @@ export function JumpCutTimeline({ onCutsChange, durations, clipTrimStart, clipTr
         <div className="absolute bg-[#201f22] border border-[#282829] border-solid bottom-[107px] h-[36px] left-[16px] right-[16px]" />
         <div className="absolute bg-[#201f22] border border-[#282829] border-solid bottom-[65px] h-[36px] left-[16px] right-[16px]" />
         
-        {/* Video clip blocks removed — top two tracks are empty backgrounds */}
+        {/* Top two tracks are empty backgrounds — jump cut feature operates on the script track below */}
         
         {/* Script/dialogue track – split into 4 segments during cut transition (same 1–2–3 flow as video tracks) */}
         <ScriptTrack
