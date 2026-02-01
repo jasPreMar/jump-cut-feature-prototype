@@ -294,7 +294,7 @@ function VideoPreview({
   onPlayPause: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [localDurations, setLocalDurations] = useState<number[]>([0, 0, 0, 0, 0]);
+  const [localDurations, setLocalDurations] = useState<number[]>(Array(8).fill(0));
   const currentClipIndexRef = useRef(0);
   const loadingClipIndexRef = useRef(0);
   const currentTimeInClipRef = useRef(0);
@@ -307,7 +307,7 @@ function VideoPreview({
   // Trimmed durations and start times (playback uses trim in/out)
   const trimmedDurations = useMemo(() => {
     const d = localDurations;
-    const ok = clipTrimStart.length === 5 && clipTrimEnd.length === 5;
+    const ok = clipTrimStart.length === 8 && clipTrimEnd.length === 8;
     return d.map((full, i) => {
       if (!ok || clipTrimEnd[i] <= clipTrimStart[i]) return full || 0;
       return Math.max(0, clipTrimEnd[i] - clipTrimStart[i]);
@@ -316,17 +316,18 @@ function VideoPreview({
 
   const startTimes = useMemo(() => {
     const s: number[] = [0];
-    for (let i = 0; i < 5; i++) s.push(s[i] + trimmedDurations[i]);
+    for (let i = 0; i < trimmedDurations.length; i++) s.push(s[i] + trimmedDurations[i]);
     return s;
   }, [trimmedDurations]);
 
-  const totalDuration = useMemo(() => startTimes[5] || 0, [startTimes]);
+  const totalDuration = useMemo(() => startTimes[startTimes.length - 1] || 0, [startTimes]);
 
   // Map playhead time to clip index and time within trimmed segment
   const { clipIndex, timeInClip } = useMemo(() => {
-    const totalSec = startTimes[5] || 0;
+    const numClips = trimmedDurations.length;
+    const totalSec = startTimes[numClips] || 0;
     if (totalSec <= 0) return { clipIndex: 0, timeInClip: 0 };
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < numClips; i++) {
       const start = startTimes[i];
       const end = startTimes[i + 1];
       const dur = trimmedDurations[i] || 0;
@@ -334,7 +335,7 @@ function VideoPreview({
         return { clipIndex: i, timeInClip: Math.min(playheadTime - start, dur) };
       }
     }
-    if (playheadTime >= totalSec) return { clipIndex: 4, timeInClip: trimmedDurations[4] || 0 };
+    if (playheadTime >= totalSec) return { clipIndex: numClips - 1, timeInClip: trimmedDurations[numClips - 1] || 0 };
     return { clipIndex: 0, timeInClip: 0 };
   }, [playheadTime, startTimes, trimmedDurations]);
 
@@ -393,7 +394,7 @@ function VideoPreview({
     const trimEnd = trimEndRef.current[i] ?? video.duration;
     const ct = video.currentTime;
     if (ct >= trimEnd - 0.05) {
-      if (i < 4) onPlayheadTimeChange(starts[i + 1]);
+      if (i < VIDEO_SOURCES.length - 1) onPlayheadTimeChange(starts[i + 1]);
       else onPlayPause();
       return;
     }
@@ -415,7 +416,7 @@ function VideoPreview({
         const te = trimEndRef.current[idx] ?? v.duration;
         const t = v.currentTime;
         if (t >= te - 0.05) {
-          if (idx < 4) onPlayheadTimeChange(startTimesRef.current[idx + 1]);
+          if (idx < VIDEO_SOURCES.length - 1) onPlayheadTimeChange(startTimesRef.current[idx + 1]);
           else onPlayPause();
           return;
         }
@@ -436,7 +437,7 @@ function VideoPreview({
   const onLoadedMetadata = useCallback((e: React.SyntheticEvent<HTMLVideoElement>) => {
     const video = e.currentTarget;
     const idx = loadingClipIndexRef.current;
-    if (idx >= 0 && idx < 5 && Number.isFinite(video.duration)) {
+    if (idx >= 0 && idx < VIDEO_SOURCES.length && Number.isFinite(video.duration)) {
       setLocalDurations((prev) => {
         const next = [...prev];
         next[idx] = video.duration;
@@ -448,7 +449,7 @@ function VideoPreview({
   const onPreloadMetadata = useCallback((e: React.SyntheticEvent<HTMLVideoElement>) => {
     const video = e.currentTarget;
     const index = Number((video as HTMLVideoElement & { dataset: { index?: string } }).dataset.index);
-    if (index >= 0 && index < 5 && Number.isFinite(video.duration) && video.duration > 0) {
+    if (index >= 0 && index < VIDEO_SOURCES.length && Number.isFinite(video.duration) && video.duration > 0) {
       setLocalDurations((prev) => {
         const next = [...prev];
         next[index] = video.duration;
@@ -460,7 +461,7 @@ function VideoPreview({
   const onEnded = useCallback(() => {
     const i = currentClipIndexRef.current;
     const st = startTimesRef.current;
-    if (i < 4) onPlayheadTimeChange(st[i + 1]);
+    if (i < VIDEO_SOURCES.length - 1) onPlayheadTimeChange(st[i + 1]);
     else onPlayPause();
   }, [onPlayheadTimeChange, onPlayPause]);
 

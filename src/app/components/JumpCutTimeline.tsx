@@ -74,29 +74,28 @@ export function JumpCutTimeline({ onCutsChange, durations, clipTrimStart, clipTr
 
   // Define clips with base configuration (originalWidth kept for jump-cut proportions)
   const baseClips: Clip[] = [
-    { id: 0, title: "Introducing Log Explorer", color: "blue", originalWidth: 210, transcript: "Log explorer lets you query logs, traces and sessions from all your apps in one place. You can search by any attribute, filter by severity level, and correlate logs with traces to debug issues faster than ever before." },
-    { id: 1, title: "Google Chrome Log Explorer Demo", color: "purple", originalWidth: 550, transcript: "Let's take a look at how this works in Google Chrome. First, we'll open the Log Explorer and search for shopping cart events." },
-    { id: 2, title: "Analytics Dashboard", color: "green", originalWidth: 700, transcript: "Then we can switch to the analytics dashboard to see the heatmap visualizations and explore the data patterns across our entire monitoring infrastructure." },
-    { id: 3, title: "User Engagement Metrics", color: "orange", originalWidth: 500, transcript: "Here we can see the full user engagement metrics, results across the totality of data streams and monitoring endpoints across all platforms." },
-    { id: 4, title: "Summary & Next Steps", color: "teal", originalWidth: 450, transcript: "We can explore the data patterns across our entire monitoring infrastructure and plan next steps for your team." },
+    { id: 0, title: "Clip 1", color: "blue", originalWidth: 210, transcript: "Debug mode is actually an agent that can help you with the most challenging parts of this process. And go to demo." },
+    { id: 1, title: "Clip 2", color: "purple", originalWidth: 550, transcript: "" },
+    { id: 2, title: "Clip 3", color: "green", originalWidth: 700, transcript: "I'm Albert, and before joining Cursor, I spent time doing kernel development work, including Linux optimizations and working on low-level USB drivers" },
+    { id: 3, title: "Clip 4", color: "orange", originalWidth: 500, transcript: "I'm Alexey. Before Cursor" },
+    { id: 4, title: "Clip 5", color: "teal", originalWidth: 450, transcript: "I was working on Chrome DevTools JavaScript debugging, and here at Cursor, my team usually deals with most challenging bugs." },
+    { id: 5, title: "Clip 6", color: "blue", originalWidth: 400, transcript: "And today, we're excited to show you debug mode." },
+    { id: 6, title: "Clip 7", color: "purple", originalWidth: 400, transcript: "A new way to interact with the agent to systematically approach" },
+    { id: 7, title: "Clip 8", color: "green", originalWidth: 400, transcript: "the most complex bugs. First, you need to define an issue to an agent. You need to select debug mode, and you need to submit your prompt. The agent will then" },
   ];
 
-  const jumpCuts: JumpCut[] = [
-    { id: 1, clipIndex: 0, endCutPosition: 190, nextClipStartPosition: 120 },
-    { id: 2, clipIndex: 1, endCutPosition: 320, nextClipStartPosition: 150 },
-    { id: 3, clipIndex: 2, endCutPosition: 250, nextClipStartPosition: 180 },
-  ];
+  const jumpCuts: JumpCut[] = [];
 
   // Full durations (for converting cut positions to seconds)
   const fullDurations = useMemo(() => {
-    const d = durations.length === 5 ? durations : [1, 1, 1, 1, 1];
-    if (d.every((x) => x <= 0)) return [1, 1, 1, 1, 1];
+    const d = durations.length === 8 ? durations : Array(8).fill(1);
+    if (d.every((x) => x <= 0)) return Array(8).fill(1);
     return d.map((x) => (x > 0 ? x : 1));
   }, [durations]);
 
   // Trimmed durations for layout (actual in/out points)
   const effectiveDurations = useMemo(() => {
-    const trimsOk = clipTrimStart.length === 5 && clipTrimEnd.length === 5;
+    const trimsOk = clipTrimStart.length === 8 && clipTrimEnd.length === 8;
     return fullDurations.map((full, i) => {
       if (!trimsOk || clipTrimEnd[i] <= clipTrimStart[i]) return full;
       return Math.max(0, clipTrimEnd[i] - clipTrimStart[i]);
@@ -109,7 +108,7 @@ export function JumpCutTimeline({ onCutsChange, durations, clipTrimStart, clipTr
   // Min zoom = zoom out until full timeline fits in viewport (same width formula as clips)
   const minZoom = useMemo(() => {
     if (totalDurationSec <= 0 || containerWidth <= 0) return 0.25;
-    const widthAtZoom1 = 2 * MARGIN + totalDurationSec * BASE_PIXELS_PER_SECOND + 4 * GAP;
+    const widthAtZoom1 = 2 * MARGIN + totalDurationSec * BASE_PIXELS_PER_SECOND + (baseClips.length - 1) * GAP;
     return Math.max(0.01, containerWidth / widthAtZoom1);
   }, [totalDurationSec, containerWidth]);
 
@@ -174,12 +173,12 @@ export function JumpCutTimeline({ onCutsChange, durations, clipTrimStart, clipTr
   // Time <-> pixel conversion
   const startTimesSec = useMemo(() => {
     const s: number[] = [0];
-    for (let i = 0; i < 5; i++) s.push(s[i] + effectiveDurations[i]);
+    for (let i = 0; i < effectiveDurations.length; i++) s.push(s[i] + effectiveDurations[i]);
     return s;
   }, [effectiveDurations]);
 
   const timeToPixel = useCallback((t: number) => {
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < clips.length; i++) {
       const start = startTimesSec[i];
       const end = startTimesSec[i + 1];
       const dur = effectiveDurations[i];
@@ -189,7 +188,8 @@ export function JumpCutTimeline({ onCutsChange, durations, clipTrimStart, clipTr
         return (clip as { left: number; fullWidth?: number }).left + frac * ((clip as { fullWidth?: number }).fullWidth ?? clip.width);
       }
     }
-    return clips[4] ? (clips[4] as { left: number; fullWidth?: number }).left + ((clips[4] as { fullWidth?: number }).fullWidth ?? clips[4].width) : MARGIN;
+    const last = clips[clips.length - 1];
+    return last ? (last as { left: number; fullWidth?: number }).left + ((last as { fullWidth?: number }).fullWidth ?? last.width) : MARGIN;
   }, [startTimesSec, effectiveDurations, clips]);
 
   const pixelToTime = useCallback((px: number) => {
@@ -340,7 +340,7 @@ export function JumpCutTimeline({ onCutsChange, durations, clipTrimStart, clipTr
     const newTrimStart = [...clipTrimStart];
     const newTrimEnd = [...clipTrimEnd];
     newTrimEnd[ci] = endSec;
-    if (nextIdx < 5) newTrimStart[nextIdx] = nextStartSec;
+    if (nextIdx < baseClips.length) newTrimStart[nextIdx] = nextStartSec;
 
     const newCompletedCuts = [...completedCuts, ci];
     const newCurrentCutIndex = currentCutIndex + 1;
@@ -517,91 +517,7 @@ export function JumpCutTimeline({ onCutsChange, durations, clipTrimStart, clipTr
         <div className="absolute bg-[#201f22] border border-[#282829] border-solid bottom-[107px] h-[36px] left-[16px] right-[16px]" />
         <div className="absolute bg-[#201f22] border border-[#282829] border-solid bottom-[65px] h-[36px] left-[16px] right-[16px]" />
         
-        {/* Video clips: 1st, 3rd, 5th on top reel; 2nd, 4th on middle reel (or split segments during cut transition) */}
-        {cutTransition ? (() => {
-          const ci = cutTransition.clipIndex;
-          const nextIdx = ci + 1;
-          const clip0 = clips[ci] as { id: number; left: number; width: number; title: string; color: Clip['color']; fullWidth?: number };
-          const clip1 = clips[nextIdx] as { id: number; left: number; width: number; title: string; color: Clip['color']; fullWidth?: number } | undefined;
-          if (!clip1) return null;
-          const fullW0 = clip0.fullWidth ?? clip0.width;
-          const fullW1 = clip1.fullWidth ?? clip1.width;
-          const SLICE_GAP_PX = 2;
-          const keep0Left = clip0.left;
-          const keep0Width = cutTransition.left - clip0.left;
-          const remove0Left = cutTransition.left + SLICE_GAP_PX;
-          const remove0Width = clip0.left + fullW0 - cutTransition.left - SLICE_GAP_PX;
-          const remove1Left = clip1.left;
-          const remove1Width = cutTransition.right - clip1.left - SLICE_GAP_PX;
-          const keep1Left = cutTransition.right + SLICE_GAP_PX;
-          const keep1Width = clip1.left + fullW1 - cutTransition.right - SLICE_GAP_PX;
-          const collapseTargetLeft = keep0Left + keep0Width + GAP;
-          return (
-            <>
-              {clips.map((clip, index) => {
-                if (index === ci || index === nextIdx) return null;
-                const reel = index % 2;
-                return (
-                  <VideoClip
-                    key={clip.id}
-                    clipId={clip.id}
-                    left={clip.left}
-                    width={clip.width}
-                    title={clip.title}
-                    color={clip.color}
-                    isNodeViewOpen={isNodeViewOpen}
-                    reel={reel}
-                  />
-                );
-              })}
-              {/* Step 1: Slice in two – visible gap between keep and remove */}
-              <VideoClipSegment left={keep0Left} width={keep0Width} title={clip0.title} color={clip0.color} reel={ci % 2} key="v-keep0" />
-              <motion.div
-                key="v-remove0"
-                initial={{ opacity: 1 }}
-                animate={{ opacity: 0 }}
-                transition={{ duration: 0.15 }}
-                style={{ position: 'absolute', bottom: 0, height: '184px', pointerEvents: 'none' }}
-              >
-                <VideoClipSegment left={remove0Left} width={remove0Width} title={clip0.title} color={clip0.color} reel={ci % 2} />
-              </motion.div>
-              <motion.div
-                key="v-remove1"
-                initial={{ opacity: 1 }}
-                animate={{ opacity: 0 }}
-                transition={{ duration: 0.15 }}
-                style={{ position: 'absolute', bottom: 0, height: '184px', pointerEvents: 'none' }}
-              >
-                <VideoClipSegment left={remove1Left} width={remove1Width} title={clip1.title} color={clip1.color} reel={nextIdx % 2} />
-              </motion.div>
-              <motion.div
-                key="v-keep1"
-                initial={{ left: keep1Left }}
-                animate={{ left: cutTransition.phase === 'collapse' ? collapseTargetLeft : keep1Left }}
-                transition={{ duration: 0.15 }}
-                style={{ position: 'absolute', bottom: 0, height: '184px', pointerEvents: 'none' }}
-              >
-                <VideoClipSegment left={0} width={keep1Width} title={clip1.title} color={clip1.color} reel={nextIdx % 2} />
-              </motion.div>
-            </>
-          );
-        })() : (
-          clips.map((clip, index) => {
-            const reel = index % 2;
-            return (
-              <VideoClip
-                key={clip.id}
-                clipId={clip.id}
-                left={clip.left}
-                width={clip.width}
-                title={clip.title}
-                color={clip.color}
-                isNodeViewOpen={isNodeViewOpen}
-                reel={reel}
-              />
-            );
-          })
-        )}
+        {/* Video clip blocks removed — top two tracks are empty backgrounds */}
         
         {/* Script/dialogue track – split into 4 segments during cut transition (same 1–2–3 flow as video tracks) */}
         <ScriptTrack

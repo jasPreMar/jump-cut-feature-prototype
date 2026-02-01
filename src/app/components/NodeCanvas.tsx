@@ -16,29 +16,35 @@ import type {
 } from "@/app/types/nodeEffects";
 
 import { VIDEO_SOURCES } from "@/app/constants/videos";
-import image1 from "../../assets/4ade86ef9dac706bb3957bd6282d330df1e57c89.png";
-import image2 from "../../assets/c4945bd878c904a44e42b756d4a58bd0d542132d.png";
-import image3 from "../../assets/7633c3f223e4bc39f692ecfd0b163fb92cb5ad4e.png";
-import image4 from "../../assets/fdac420adeb4e37cb6c0fc58ae2eaac15892ec6c.png";
-import image5 from "../../assets/3b60bf79536904eac8e068b551ee0f317c3a107f.png";
-
-const CLIP_IMAGES = [image1, image2, image3, image4, image5];
-
 const CLIPS = [
-  { id: 0, title: "Introducing Log Explorer", color: "blue" as const },
-  { id: 1, title: "Google Chrome Log Explorer Demo", color: "purple" as const },
-  { id: 2, title: "Analytics Dashboard", color: "green" as const },
-  { id: 3, title: "User Engagement Metrics", color: "orange" as const },
-  { id: 4, title: "Summary & Next Steps", color: "teal" as const },
+  { id: 0, title: "Clip 1", color: "blue" as const },
+  { id: 1, title: "Clip 2", color: "purple" as const },
+  { id: 2, title: "Clip 3", color: "green" as const },
+  { id: 3, title: "Clip 4", color: "orange" as const },
+  { id: 4, title: "Clip 5", color: "teal" as const },
+  { id: 5, title: "Clip 6", color: "blue" as const },
+  { id: 6, title: "Clip 7", color: "purple" as const },
+  { id: 7, title: "Clip 8", color: "green" as const },
+];
+
+const CLIP_TRANSCRIPTS = [
+  "Debug mode is actually an agent that can help you with the most challenging parts of this process. And go to demo.",
+  "",
+  "I'm Albert, and before joining Cursor, I spent time doing kernel development work, including Linux optimizations and working on low-level USB drivers",
+  "I'm Alexey. Before Cursor",
+  "I was working on Chrome DevTools JavaScript debugging, and here at Cursor, my team usually deals with most challenging bugs.",
+  "And today, we're excited to show you debug mode.",
+  "A new way to interact with the agent to systematically approach",
+  "the most complex bugs. First, you need to define an issue to an agent. You need to select debug mode, and you need to submit your prompt. The agent will then",
 ];
 
 const NODE_WIDTH = 320;
-const NODE_GAP_X = 40;
 const NODE_GAP_Y = 72;
 const CLIP_HEIGHT_ESTIMATE = 200;
 const EFFECT_HEIGHT_ESTIMATE = 220;
 const CANVAS_PADDING_X = 80;
 const CANVAS_PADDING_Y = 40;
+const COLUMN_GAP = 60;
 
 interface NodeCanvasProps {
   onClose: () => void;
@@ -59,19 +65,20 @@ function buildGraphFromChains(
   const connections: Connection[] = [];
 
   CLIPS.forEach((clip, colIndex) => {
-    const x = CANVAS_PADDING_X + colIndex * (NODE_WIDTH + NODE_GAP_X);
-    const clipNodeId = `clip-${clip.id}`;
+    const columnBaseX = CANVAS_PADDING_X + colIndex * (NODE_WIDTH + COLUMN_GAP);
 
-    const existing = existingGraph?.nodes[clipNodeId];
+    // Video clip node
+    const clipNodeId = `clip-${clip.id}`;
+    const existingClip = existingGraph?.nodes[clipNodeId];
     nodes[clipNodeId] = {
       id: clipNodeId,
       type: "clip",
-      position: existing ? existing.position : { x, y: CANVAS_PADDING_Y },
+      position: existingClip ? existingClip.position : { x: columnBaseX, y: CANVAS_PADDING_Y },
       clipId: clip.id,
-      color: clip.color,
       title: clip.title,
     };
 
+    // Effect chain directly from clip node
     const effects = effectChains[clip.id] || [];
     let prevNodeId = clipNodeId;
 
@@ -87,10 +94,11 @@ function buildGraphFromChains(
       nodes[effectNodeId] = {
         id: effectNodeId,
         type: "effect",
-        position: existingEffect ? existingEffect.position : { x, y },
+        position: existingEffect ? existingEffect.position : { x: columnBaseX, y },
         clipId: clip.id,
         effectType: effect.effectType,
         prompt: effect.prompt,
+        isNewEffect: existingEffect?.isNewEffect,
       };
 
       connections.push({
@@ -154,9 +162,9 @@ export function NodeCanvas({
   effectChains,
   onEffectChainsChange,
   playheadTime,
-  durations = [0, 0, 0, 0, 0],
-  clipTrimStart = [0, 0, 0, 0, 0],
-  clipTrimEnd = [0, 0, 0, 0, 0],
+  durations = Array(8).fill(0),
+  clipTrimStart = Array(8).fill(0),
+  clipTrimEnd = Array(8).fill(0),
   onSeekAndPlay,
 }: NodeCanvasProps) {
   const [graph, setGraph] = useState<NodeGraph>(() =>
@@ -384,7 +392,7 @@ export function NodeCanvas({
       const newNodeId = `effect-${newId}`;
 
       updateGraphAndSync((prev) => {
-        // Find the last node in this clip's chain
+        // Walk from the clip node to find the last node in the chain
         const clipNodeId = `clip-${clipId}`;
         const adjacency = new Map<string, string[]>();
         for (const conn of prev.connections) {
@@ -403,12 +411,12 @@ export function NodeCanvas({
         }
 
         const lastNode = prev.nodes[lastNodeId];
+        const heightEstimate =
+          lastNode?.type === "clip"
+            ? CLIP_HEIGHT_ESTIMATE
+            : EFFECT_HEIGHT_ESTIMATE;
         const newY = lastNode
-          ? lastNode.position.y +
-            (lastNode.type === "clip"
-              ? CLIP_HEIGHT_ESTIMATE
-              : EFFECT_HEIGHT_ESTIMATE) +
-            NODE_GAP_Y
+          ? lastNode.position.y + heightEstimate + NODE_GAP_Y
           : CANVAS_PADDING_Y + CLIP_HEIGHT_ESTIMATE + NODE_GAP_Y;
 
         const newNode: CanvasNode = {
@@ -478,24 +486,19 @@ export function NodeCanvas({
   const handlePromptChange = useCallback(
     (_clipId: number, effectId: string, prompt: string) => {
       const nodeId = `effect-${effectId}`;
-      setGraph((prev) => ({
-        ...prev,
-        nodes: {
-          ...prev.nodes,
-          [nodeId]: { ...prev.nodes[nodeId], prompt },
-        },
-      }));
-      onEffectChainsChange(
-        syncGraphToChains({
-          ...graph,
+      setGraph((prev) => {
+        const next = {
+          ...prev,
           nodes: {
-            ...graph.nodes,
-            [nodeId]: { ...graph.nodes[nodeId], prompt },
+            ...prev.nodes,
+            [nodeId]: { ...prev.nodes[nodeId], prompt, isNewEffect: true },
           },
-        })
-      );
+        };
+        onEffectChainsChange(syncGraphToChains(next));
+        return next;
+      });
     },
-    [graph, onEffectChainsChange]
+    [onEffectChainsChange]
   );
 
   // Compute connection line endpoints from measured positions
@@ -508,7 +511,11 @@ export function NodeCanvas({
 
       const sourceNode = graph.nodes[conn.sourceNodeId];
       const sourceEl = nodeRefs.current.get(conn.sourceNodeId);
-      const sourceHeight = sourceEl?.offsetHeight ?? (sourceNode?.type === "clip" ? CLIP_HEIGHT_ESTIMATE : EFFECT_HEIGHT_ESTIMATE);
+      const fallbackHeight =
+        sourceNode?.type === "clip"
+          ? CLIP_HEIGHT_ESTIMATE
+          : EFFECT_HEIGHT_ESTIMATE;
+      const sourceHeight = sourceEl?.offsetHeight ?? fallbackHeight;
 
       return {
         id: conn.id,
@@ -562,9 +569,9 @@ export function NodeCanvas({
 
   // Trimmed start times (for seek-and-play from node)
   const startTimesSec = useMemo(() => {
-    const ok = clipTrimStart.length === 5 && clipTrimEnd.length === 5;
+    const ok = clipTrimStart.length === durations.length && clipTrimEnd.length === durations.length;
     const s: number[] = [0];
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < durations.length; i++) {
       const dur = ok && clipTrimEnd[i] > clipTrimStart[i]
         ? clipTrimEnd[i] - clipTrimStart[i]
         : durations[i] || 0;
@@ -577,7 +584,7 @@ export function NodeCanvas({
   const { activeClipIndex, activeTimeInClip } = useMemo(() => {
     const t = playheadTime ?? 0;
     let idx = -1;
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < CLIPS.length; i++) {
       if (t >= startTimesSec[i] && t < startTimesSec[i + 1]) {
         idx = i;
         break;
@@ -628,7 +635,7 @@ export function NodeCanvas({
             minWidth:
               CANVAS_PADDING_X * 2 +
               CLIPS.length * NODE_WIDTH +
-              (CLIPS.length - 1) * NODE_GAP_X,
+              (CLIPS.length - 1) * COLUMN_GAP,
             minHeight: 800,
           }}
         >
@@ -659,8 +666,10 @@ export function NodeCanvas({
 
           {/* Render all nodes flat */}
           {Object.values(graph.nodes).map((node) => {
+            const clipId = node.clipId ?? 0;
+
             if (node.type === "clip") {
-              const clip = CLIPS.find((c) => c.id === node.clipId);
+              const clip = CLIPS.find((c) => c.id === clipId);
               if (!clip) return null;
 
               return (
@@ -683,7 +692,6 @@ export function NodeCanvas({
                     <ClipBlock
                       clipId={clip.id}
                       title={clip.title}
-                      color={clip.color}
                       videoSrc={VIDEO_SOURCES[clip.id] ?? ""}
                       trimStart={clipTrimStart[clip.id] ?? 0}
                       trimEnd={clipTrimEnd[clip.id] ?? durations[clip.id] ?? 0}
@@ -723,10 +731,11 @@ export function NodeCanvas({
                           : undefined
                       }
                       layoutId={`clip-${clip.id}`}
+                      transcript={CLIP_TRANSCRIPTS[clip.id]}
                     />
                   </div>
 
-                  {/* Output port for clip */}
+                  {/* Output port */}
                   <div className="flex justify-center">
                     <NodePort
                       nodeId={node.id}
@@ -753,7 +762,6 @@ export function NodeCanvas({
 
             // Effect node
             const effectId = node.id.replace("effect-", "");
-            const clipId = node.clipId ?? 0;
 
             return (
               <div
@@ -790,7 +798,6 @@ export function NodeCanvas({
                     id={effectId}
                     effectType={node.effectType || "Text"}
                     prompt={node.prompt || ""}
-                    imageSrc={CLIP_IMAGES[clipId]}
                     onPromptChange={(id, prompt) =>
                       handlePromptChange(clipId, id, prompt)
                     }
@@ -801,6 +808,7 @@ export function NodeCanvas({
                     onHover={(h) =>
                       setHoveredBlockId(h ? node.id : null)
                     }
+                    isGenerating={node.isNewEffect}
                   />
                 </div>
 

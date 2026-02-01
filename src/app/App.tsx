@@ -13,18 +13,18 @@ export default function App() {
   const [isNodeViewOpen, setIsNodeViewOpen] = useState(false);
   const [effectChains, setEffectChains] = useState<Record<number, EffectBlock[]>>({});
   const [playheadTime, setPlayheadTime] = useState(0); // seconds along timeline
-  const [durations, setDurations] = useState<number[]>([0, 0, 0, 0, 0]); // video clip durations in seconds
-  const [clipTrimStart, setClipTrimStart] = useState<number[]>([0, 0, 0, 0, 0]); // start time (sec) within each clip
-  const [clipTrimEnd, setClipTrimEnd] = useState<number[]>([0, 0, 0, 0, 0]); // end time (sec) within each clip
+  const [durations, setDurations] = useState<number[]>(Array(8).fill(0)); // video clip durations in seconds
+  const [clipTrimStart, setClipTrimStart] = useState<number[]>(Array(8).fill(0)); // start time (sec) within each clip
+  const [clipTrimEnd, setClipTrimEnd] = useState<number[]>(Array(8).fill(0)); // end time (sec) within each clip
   const [isPlaying, setIsPlaying] = useState(false);
 
   // When durations load, set trim end to duration only when not yet set (don’t overwrite user cuts)
   useEffect(() => {
-    if (durations.length !== 5) return;
+    if (durations.length !== 8) return;
     setClipTrimEnd((prev) => {
       const next = [...prev];
       let changed = false;
-      for (let i = 0; i < 5; i++) if (durations[i] > 0 && (prev[i] === 0 || prev[i] === undefined)) { next[i] = durations[i]; changed = true; }
+      for (let i = 0; i < 8; i++) if (durations[i] > 0 && (prev[i] === 0 || prev[i] === undefined)) { next[i] = durations[i]; changed = true; }
       return changed ? next : prev;
     });
   }, [durations]);

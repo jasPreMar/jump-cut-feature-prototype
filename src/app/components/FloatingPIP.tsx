@@ -69,9 +69,9 @@ interface FloatingPIPProps {
 export function FloatingPIP({
   completedCuts: _completedCuts,
   playheadTime = 0,
-  durations = [0, 0, 0, 0, 0],
-  clipTrimStart = [0, 0, 0, 0, 0],
-  clipTrimEnd = [0, 0, 0, 0, 0],
+  durations = Array(8).fill(0),
+  clipTrimStart = Array(8).fill(0),
+  clipTrimEnd = Array(8).fill(0),
   isPlaying = false,
   onPlayPause,
 }: FloatingPIPProps) {
@@ -91,7 +91,7 @@ export function FloatingPIP({
   const velocity = useRef({ vx: 0, vy: 0 });
 
   const trimmedDurations = useMemo(() => {
-    const ok = clipTrimStart.length === 5 && clipTrimEnd.length === 5;
+    const ok = clipTrimStart.length === durations.length && clipTrimEnd.length === durations.length;
     return durations.map((full, i) => {
       if (!ok || clipTrimEnd[i] <= clipTrimStart[i]) return full || 0;
       return Math.max(0, clipTrimEnd[i] - clipTrimStart[i]);
@@ -100,14 +100,15 @@ export function FloatingPIP({
 
   const startTimes = useMemo(() => {
     const s: number[] = [0];
-    for (let i = 0; i < 5; i++) s.push(s[i] + trimmedDurations[i]);
+    for (let i = 0; i < trimmedDurations.length; i++) s.push(s[i] + trimmedDurations[i]);
     return s;
   }, [trimmedDurations]);
 
   const { clipIndex, timeInClip } = useMemo(() => {
-    const totalSec = startTimes[5] || 0;
+    const numClips = trimmedDurations.length;
+    const totalSec = startTimes[numClips] || 0;
     if (totalSec <= 0) return { clipIndex: 0, timeInClip: 0 };
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < numClips; i++) {
       const start = startTimes[i];
       const end = startTimes[i + 1];
       const dur = trimmedDurations[i] || 0;
@@ -115,7 +116,7 @@ export function FloatingPIP({
         return { clipIndex: i, timeInClip: Math.min(playheadTime - start, dur) };
       }
     }
-    if (playheadTime >= totalSec) return { clipIndex: 4, timeInClip: trimmedDurations[4] || 0 };
+    if (playheadTime >= totalSec) return { clipIndex: numClips - 1, timeInClip: trimmedDurations[numClips - 1] || 0 };
     return { clipIndex: 0, timeInClip: 0 };
   }, [playheadTime, startTimes, trimmedDurations]);
 
