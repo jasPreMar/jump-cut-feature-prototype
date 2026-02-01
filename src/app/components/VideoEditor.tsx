@@ -5,15 +5,7 @@ import image1 from "../../assets/4ade86ef9dac706bb3957bd6282d330df1e57c89.png";
 import image2 from "../../assets/c4945bd878c904a44e42b756d4a58bd0d542132d.png";
 import image3 from "../../assets/7633c3f223e4bc39f692ecfd0b163fb92cb5ad4e.png";
 import image4 from "../../assets/fdac420adeb4e37cb6c0fc58ae2eaac15892ec6c.png";
-// Video sources - using placeholders for deployment
-// In production, these would be replaced with actual video URLs from a CDN
-const VIDEO_SOURCES = [
-  "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
-  "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
-  "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
-  "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4",
-  "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4",
-];
+import { VIDEO_SOURCES } from "@/app/constants/videos";
 
 export function VideoEditor({
   completedCuts,

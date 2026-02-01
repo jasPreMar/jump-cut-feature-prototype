@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Film } from "lucide-react";
 import { cn } from "@/app/components/ui/utils";
@@ -8,23 +8,75 @@ interface ClipBlockProps {
   clipId: number;
   title: string;
   color: "blue" | "purple" | "green" | "orange" | "teal";
-  imageSrc: string;
+  videoSrc: string;
+  trimStart: number;
+  trimEnd: number;
+  /** Seconds within the clip segment to show (0 = first frame). */
+  previewTime: number;
   onHover?: (hovered: boolean) => void;
+  onHoverMove?: (fraction: number) => void;
+  onSeekAndPlay?: () => void;
   isHovered?: boolean;
+  /** This clip is the one currently at the main playhead. */
+  isActiveClip?: boolean;
+  /** Time (sec) within this clip segment for the main playhead marker. */
+  activePlayheadTimeInClip?: number;
+  /** Time (sec) within this clip segment for the ghost playhead when hovering. */
+  hoverPreviewTimeInClip?: number;
   layoutId?: string;
 }
 
 export function ClipBlock({
   title,
   color,
-  imageSrc,
+  videoSrc,
+  trimStart,
+  trimEnd,
+  previewTime,
   onHover,
+  onHoverMove,
+  onSeekAndPlay,
   isHovered = false,
+  isActiveClip = false,
+  activePlayheadTimeInClip,
+  hoverPreviewTimeInClip,
   layoutId,
 }: ClipBlockProps) {
   const [localHovered, setLocalHovered] = useState(false);
+  const previewRef = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
   const hovered = isHovered || localHovered;
   const colors = CLIP_COLORS[color];
+
+  const segmentDuration = Math.max(0, trimEnd - trimStart);
+  const currentTime = segmentDuration > 0 ? trimStart + Math.min(previewTime, segmentDuration) : trimStart;
+
+  const playheadLeftPercent =
+    segmentDuration > 0 && isActiveClip && activePlayheadTimeInClip != null
+      ? Math.min(100, Math.max(0, (activePlayheadTimeInClip / segmentDuration) * 100))
+      : null;
+  const ghostLeftPercent =
+    segmentDuration > 0 && hovered && hoverPreviewTimeInClip != null
+      ? Math.min(100, Math.max(0, (hoverPreviewTimeInClip / segmentDuration) * 100))
+      : null;
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (video.readyState >= 2) video.currentTime = currentTime;
+  }, [currentTime]);
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const el = previewRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const fraction = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    onHoverMove?.(fraction);
+  };
+
+  const handleClick = () => {
+    onSeekAndPlay?.();
+  };
 
   return (
     <motion.div
@@ -59,16 +111,45 @@ export function ClipBlock({
         </div>
       </div>
 
-      {/* 16:9 Preview thumbnail */}
-      <div className="mx-3 mb-2 rounded-lg overflow-hidden aspect-video bg-[#111]">
-        <img
-          src={imageSrc}
-          alt={title}
-          className="w-full h-full object-cover"
+      {/* 16:9 Preview: video frame, hover = scrub, click = seek & play */}
+      <div
+        ref={previewRef}
+        className="mx-3 mb-2 rounded-lg overflow-hidden aspect-video bg-[#111] relative cursor-pointer"
+        onMouseMove={handleMouseMove}
+        onClick={handleClick}
+      >
+        <video
+          ref={videoRef}
+          src={videoSrc}
+          className="w-full h-full object-cover pointer-events-none"
+          muted
+          playsInline
+          preload="metadata"
+          onLoadedData={() => {
+            const v = videoRef.current;
+            if (v && v.readyState >= 2) v.currentTime = currentTime;
+          }}
         />
+        {hovered && (
+          <div className="absolute inset-0 pointer-events-none border-2 border-white/50 rounded-lg" />
+        )}
+        {/* Ghost playhead: faint line following cursor when hovering */}
+        {ghostLeftPercent != null && (
+          <div
+            className="absolute inset-y-0 w-0.5 bg-white/40 pointer-events-none z-10"
+            style={{ left: `${ghostLeftPercent}%`, transform: "translateX(-50%)" }}
+          />
+        )}
+        {/* Playhead: solid marker on the clip that is currently playing */}
+        {playheadLeftPercent != null && (
+          <div
+            className="absolute inset-y-0 w-0.5 bg-white pointer-events-none z-20 shadow-[0_0_6px_rgba(255,255,255,0.8)]"
+            style={{ left: `${playheadLeftPercent}%`, transform: "translateX(-50%)" }}
+          />
+        )}
       </div>
 
-      {/* Hover prompt area */}
+      {/* Hover prompt */}
       <AnimatePresence>
         {hovered && (
           <motion.div
@@ -81,7 +162,7 @@ export function ClipBlock({
             <div className="px-4 pb-3 pt-1">
               <p className="text-[11px] text-white/30 mb-1">Source clip</p>
               <p className="text-[12px] text-white/50 italic">
-                Original footage
+                Hover to scrub · Click to play from here
               </p>
             </div>
           </motion.div>

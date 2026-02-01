@@ -1,10 +1,7 @@
-import { useRef, useCallback, useEffect, useState } from "react";
+import { useRef, useCallback, useEffect, useState, useMemo } from "react";
 import { motion, useSpring } from "motion/react";
-
-import image1 from "../../assets/4ade86ef9dac706bb3957bd6282d330df1e57c89.png";
-import image2 from "../../assets/c4945bd878c904a44e42b756d4a58bd0d542132d.png";
-import image3 from "../../assets/7633c3f223e4bc39f692ecfd0b163fb92cb5ad4e.png";
-import image4 from "../../assets/fdac420adeb4e37cb6c0fc58ae2eaac15892ec6c.png";
+import { Play, Pause } from "lucide-react";
+import { VIDEO_SOURCES } from "@/app/constants/videos";
 
 const MARGIN = 16;
 const DEFAULT_WIDTH = 480;
@@ -61,12 +58,29 @@ function nearestCorner(
 
 interface FloatingPIPProps {
   completedCuts: number[];
+  playheadTime?: number;
+  durations?: number[];
+  clipTrimStart?: number[];
+  clipTrimEnd?: number[];
+  isPlaying?: boolean;
+  onPlayPause?: () => void;
 }
 
-export function FloatingPIP({ completedCuts }: FloatingPIPProps) {
+export function FloatingPIP({
+  completedCuts: _completedCuts,
+  playheadTime = 0,
+  durations = [0, 0, 0, 0, 0],
+  clipTrimStart = [0, 0, 0, 0, 0],
+  clipTrimEnd = [0, 0, 0, 0, 0],
+  isPlaying = false,
+  onPlayPause,
+}: FloatingPIPProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const pipRef = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const videoCurrentTimeRef = useRef(0);
   const [pipWidth, setPipWidth] = useState(DEFAULT_WIDTH);
+  const [pipHovered, setPipHovered] = useState(false);
   const pipHeight = pipWidth / ASPECT_RATIO;
 
   const springX = useSpring(0, SPRING_CONFIG);
@@ -75,6 +89,79 @@ export function FloatingPIP({ completedCuts }: FloatingPIPProps) {
   const isDragging = useRef(false);
   const lastPointer = useRef({ x: 0, y: 0, t: 0 });
   const velocity = useRef({ vx: 0, vy: 0 });
+
+  const trimmedDurations = useMemo(() => {
+    const ok = clipTrimStart.length === 5 && clipTrimEnd.length === 5;
+    return durations.map((full, i) => {
+      if (!ok || clipTrimEnd[i] <= clipTrimStart[i]) return full || 0;
+      return Math.max(0, clipTrimEnd[i] - clipTrimStart[i]);
+    });
+  }, [durations, clipTrimStart, clipTrimEnd]);
+
+  const startTimes = useMemo(() => {
+    const s: number[] = [0];
+    for (let i = 0; i < 5; i++) s.push(s[i] + trimmedDurations[i]);
+    return s;
+  }, [trimmedDurations]);
+
+  const { clipIndex, timeInClip } = useMemo(() => {
+    const totalSec = startTimes[5] || 0;
+    if (totalSec <= 0) return { clipIndex: 0, timeInClip: 0 };
+    for (let i = 0; i < 5; i++) {
+      const start = startTimes[i];
+      const end = startTimes[i + 1];
+      const dur = trimmedDurations[i] || 0;
+      if (dur > 0 && playheadTime >= start && playheadTime < end) {
+        return { clipIndex: i, timeInClip: Math.min(playheadTime - start, dur) };
+      }
+    }
+    if (playheadTime >= totalSec) return { clipIndex: 4, timeInClip: trimmedDurations[4] || 0 };
+    return { clipIndex: 0, timeInClip: 0 };
+  }, [playheadTime, startTimes, trimmedDurations]);
+
+  const videoCurrentTime = (clipTrimStart[clipIndex] ?? 0) + timeInClip;
+  videoCurrentTimeRef.current = videoCurrentTime;
+
+  // When paused: seek PIP to match playhead (smooth scrubbing). When playing: sync once per clip then let the PIP video play natively so it stays smooth like the main preview.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (video.readyState < 2) return;
+    if (isPlaying) {
+      video.currentTime = videoCurrentTime;
+      video.play().catch(() => {});
+    } else {
+      video.currentTime = videoCurrentTime;
+      video.pause();
+    }
+  }, [clipIndex, isPlaying]);
+
+  // When paused, keep PIP in sync with scrubbed playhead
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || video.readyState < 2 || isPlaying) return;
+    video.currentTime = videoCurrentTime;
+  }, [isPlaying, videoCurrentTime]);
+
+  // When playing and clip src just loaded (e.g. after clip change), seek and play
+  const onPIPLoadedData = useCallback(() => {
+    const video = videoRef.current;
+    if (!video || !isPlaying) return;
+    video.currentTime = videoCurrentTime;
+    video.play().catch(() => {});
+  }, [isPlaying, videoCurrentTime]);
+
+  // While playing, periodically sync PIP to main playhead to avoid drift (main drives time via onTimeUpdate)
+  useEffect(() => {
+    if (!isPlaying) return;
+    const interval = setInterval(() => {
+      const video = videoRef.current;
+      if (!video || video.readyState < 2) return;
+      const target = videoCurrentTimeRef.current;
+      if (Math.abs(video.currentTime - target) > 0.2) video.currentTime = target;
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [isPlaying]);
 
   // Initialize position to top-right corner
   useEffect(() => {
@@ -98,6 +185,7 @@ export function FloatingPIP({ completedCuts }: FloatingPIPProps) {
 
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
+      if ((e.target as HTMLElement).closest("[data-pip-controls]")) return;
       e.preventDefault();
       isDragging.current = true;
       lastPointer.current = { x: e.clientX, y: e.clientY, t: performance.now() };
@@ -179,15 +267,7 @@ export function FloatingPIP({ completedCuts }: FloatingPIPProps) {
     springY.set(pos.y);
   }, [pipWidth, pipHeight]);
 
-  let currentImage = image1;
-  const cutCount = completedCuts.length;
-  if (cutCount >= 3) {
-    currentImage = image4;
-  } else if (cutCount === 2) {
-    currentImage = image3;
-  } else if (cutCount === 1) {
-    currentImage = image2;
-  }
+  const videoSrc = VIDEO_SOURCES[clipIndex] ?? VIDEO_SOURCES[0];
 
   return (
     <div ref={containerRef} className="absolute inset-0 pointer-events-none">
@@ -203,13 +283,41 @@ export function FloatingPIP({ completedCuts }: FloatingPIPProps) {
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
+        onMouseEnter={() => setPipHovered(true)}
+        onMouseLeave={() => setPipHovered(false)}
       >
-        <img
-          src={currentImage}
-          alt="Video preview"
-          className="w-full h-full object-cover"
-          draggable={false}
+        <video
+          ref={videoRef}
+          src={videoSrc}
+          className="w-full h-full object-cover pointer-events-none"
+          muted
+          playsInline
+          preload="auto"
+          onLoadedData={onPIPLoadedData}
         />
+        {pipHovered && onPlayPause && (
+          <div
+            data-pip-controls
+            className="absolute inset-x-0 bottom-0 bg-black/60 flex items-center justify-center gap-2 py-2 pointer-events-auto"
+            onClick={(e) => {
+              e.stopPropagation();
+              onPlayPause();
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="p-1.5 rounded-full bg-white/20 hover:bg-white/30 transition-colors"
+              aria-label={isPlaying ? "Pause" : "Play"}
+            >
+              {isPlaying ? (
+                <Pause className="size-5 text-white" />
+              ) : (
+                <Play className="size-5 text-white ml-0.5" />
+              )}
+            </button>
+          </div>
+        )}
       </motion.div>
     </div>
   );

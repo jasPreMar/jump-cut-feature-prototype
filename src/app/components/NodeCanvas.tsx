@@ -15,6 +15,7 @@ import type {
   NodeGraph,
 } from "@/app/types/nodeEffects";
 
+import { VIDEO_SOURCES } from "@/app/constants/videos";
 import image1 from "../../assets/4ade86ef9dac706bb3957bd6282d330df1e57c89.png";
 import image2 from "../../assets/c4945bd878c904a44e42b756d4a58bd0d542132d.png";
 import image3 from "../../assets/7633c3f223e4bc39f692ecfd0b163fb92cb5ad4e.png";
@@ -44,6 +45,10 @@ interface NodeCanvasProps {
   effectChains: Record<number, EffectBlock[]>;
   onEffectChainsChange: (chains: Record<number, EffectBlock[]>) => void;
   playheadTime?: number;
+  durations?: number[];
+  clipTrimStart?: number[];
+  clipTrimEnd?: number[];
+  onSeekAndPlay?: (timeSeconds: number) => void;
 }
 
 function buildGraphFromChains(
@@ -149,11 +154,16 @@ export function NodeCanvas({
   effectChains,
   onEffectChainsChange,
   playheadTime,
+  durations = [0, 0, 0, 0, 0],
+  clipTrimStart = [0, 0, 0, 0, 0],
+  clipTrimEnd = [0, 0, 0, 0, 0],
+  onSeekAndPlay,
 }: NodeCanvasProps) {
   const [graph, setGraph] = useState<NodeGraph>(() =>
     buildGraphFromChains(effectChains)
   );
   const [hoveredBlockId, setHoveredBlockId] = useState<string | null>(null);
+  const [hoverPreviewTime, setHoverPreviewTime] = useState<Record<number, number>>({});
   const [quickAddMenu, setQuickAddMenu] = useState<{
     sourceNodeId: string;
     position: { x: number; y: number };
@@ -550,6 +560,33 @@ export function NodeCanvas({
     return set;
   }, [graph.connections]);
 
+  // Trimmed start times (for seek-and-play from node)
+  const startTimesSec = useMemo(() => {
+    const ok = clipTrimStart.length === 5 && clipTrimEnd.length === 5;
+    const s: number[] = [0];
+    for (let i = 0; i < 5; i++) {
+      const dur = ok && clipTrimEnd[i] > clipTrimStart[i]
+        ? clipTrimEnd[i] - clipTrimStart[i]
+        : durations[i] || 0;
+      s.push(s[i] + dur);
+    }
+    return s;
+  }, [durations, clipTrimStart, clipTrimEnd]);
+
+  // Which clip the playhead is in and time within that clip (for playhead marker on node)
+  const { activeClipIndex, activeTimeInClip } = useMemo(() => {
+    const t = playheadTime ?? 0;
+    let idx = -1;
+    for (let i = 0; i < 5; i++) {
+      if (t >= startTimesSec[i] && t < startTimesSec[i + 1]) {
+        idx = i;
+        break;
+      }
+    }
+    const timeInClip = idx >= 0 ? t - startTimesSec[idx] : 0;
+    return { activeClipIndex: idx, activeTimeInClip: timeInClip };
+  }, [playheadTime, startTimesSec]);
+
   // Format playhead time for display
   const formattedTime = useMemo(() => {
     if (playheadTime === undefined) return null;
@@ -647,10 +684,43 @@ export function NodeCanvas({
                       clipId={clip.id}
                       title={clip.title}
                       color={clip.color}
-                      imageSrc={CLIP_IMAGES[clip.id]}
+                      videoSrc={VIDEO_SOURCES[clip.id] ?? ""}
+                      trimStart={clipTrimStart[clip.id] ?? 0}
+                      trimEnd={clipTrimEnd[clip.id] ?? durations[clip.id] ?? 0}
+                      previewTime={
+                        hoveredBlockId === node.id
+                          ? (hoverPreviewTime[clip.id] ?? 0)
+                          : activeClipIndex === clip.id
+                            ? activeTimeInClip
+                            : 0
+                      }
                       isHovered={hoveredBlockId === node.id}
+                      isActiveClip={activeClipIndex === clip.id}
+                      activePlayheadTimeInClip={
+                        activeClipIndex === clip.id ? activeTimeInClip : undefined
+                      }
+                      hoverPreviewTimeInClip={
+                        hoveredBlockId === node.id ? (hoverPreviewTime[clip.id] ?? 0) : undefined
+                      }
                       onHover={(h) =>
                         setHoveredBlockId(h ? node.id : null)
+                      }
+                      onHoverMove={(frac) => {
+                        const end = clipTrimEnd[clip.id] ?? 0;
+                        const start = clipTrimStart[clip.id] ?? 0;
+                        const seg = Math.max(0, end - start);
+                        setHoverPreviewTime((prev) => ({
+                          ...prev,
+                          [clip.id]: frac * seg,
+                        }));
+                      }}
+                      onSeekAndPlay={
+                        onSeekAndPlay
+                          ? () => {
+                              const timeInClip = hoverPreviewTime[clip.id] ?? 0;
+                              onSeekAndPlay(startTimesSec[clip.id] + timeInClip);
+                            }
+                          : undefined
                       }
                       layoutId={`clip-${clip.id}`}
                     />

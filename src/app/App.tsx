@@ -34,6 +34,11 @@ export default function App() {
     setClipTrimEnd(trimEnd);
   }, []);
 
+  const handleSeekAndPlay = useCallback((timeSeconds: number) => {
+    setPlayheadTime(timeSeconds);
+    setIsPlaying(true);
+  }, []);
+
   const handleToggleNodeView = useCallback(() => {
     setIsNodeViewOpen((prev) => !prev);
   }, []);
@@ -96,6 +101,10 @@ export default function App() {
                   effectChains={effectChains}
                   onEffectChainsChange={setEffectChains}
                   playheadTime={playheadTime}
+                  durations={durations}
+                  clipTrimStart={clipTrimStart}
+                  clipTrimEnd={clipTrimEnd}
+                  onSeekAndPlay={handleSeekAndPlay}
                 />
                 <AnimatePresence>
                   <motion.div
@@ -106,7 +115,15 @@ export default function App() {
                     transition={{ duration: 0.3 }}
                     className="absolute inset-0 pointer-events-none"
                   >
-                    <FloatingPIP completedCuts={completedCuts} />
+                    <FloatingPIP
+                      completedCuts={completedCuts}
+                      playheadTime={playheadTime}
+                      durations={durations}
+                      clipTrimStart={clipTrimStart}
+                      clipTrimEnd={clipTrimEnd}
+                      isPlaying={isPlaying}
+                      onPlayPause={handlePlayPause}
+                    />
                   </motion.div>
                 </AnimatePresence>
               </motion.div>
