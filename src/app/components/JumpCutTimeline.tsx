@@ -42,9 +42,11 @@ export function JumpCutTimeline({ onCutsChange, durations, clipTrimStart, clipTr
   const [clipStartPositions, setClipStartPositions] = useState<Record<number, number>>({});
   const [hoveredPosition, setHoveredPosition] = useState<number | null>(null);
   const [scrollLeft, setScrollLeft] = useState(0);
-  const [zoom, setZoom] = useState(1);
+  const [zoom, setZoom] = useState(0.01);
   const [containerWidth, setContainerWidth] = useState(0);
   const pinchStartRef = useRef<{ distance: number; zoom: number } | null>(null);
+  const initialZoomSetRef = useRef(false);
+  const prevMinZoomRef = useRef<number | null>(null);
   const [manualSplits, setManualSplits] = useState<number[]>([]);
   const [history, setHistory] = useState<Array<{
     completedCuts: number[];
@@ -109,9 +111,29 @@ export function JumpCutTimeline({ onCutsChange, durations, clipTrimStart, clipTr
     return () => ro.disconnect();
   }, []);
 
+  // Clamp zoom to minZoom, but only after we have real container size. On first run, cap at 1 so we
+  // never start zoomed in (avoids jump when default durations make minZoom > 1). When minZoom later
+  // decreases (e.g. real durations load), set zoom to new minZoom so we stay fitted. Never clamp
+  // upward past 1 (so we don't "zoom in" on load when timeline is shorter than viewport).
   useEffect(() => {
-    if (zoom < minZoom) setZoom(minZoom);
-  }, [minZoom]);
+    if (containerWidth <= 0) return;
+    const prevMin = prevMinZoomRef.current;
+    prevMinZoomRef.current = minZoom;
+
+    if (!initialZoomSetRef.current) {
+      setZoom(Math.min(minZoom, 1));
+      initialZoomSetRef.current = true;
+      return;
+    }
+    if (prevMin !== null && minZoom < prevMin) {
+      setZoom(minZoom);
+      return;
+    }
+    if (zoom < minZoom) {
+      if (minZoom <= 1) setZoom(minZoom);
+      // when minZoom > 1 (short timeline), don't clamp so we stay at 1 and don't jump zoomed in
+    }
+  }, [minZoom, containerWidth, zoom]);
 
   // Clip layout: widths = trimmed duration (actual in/out from cuts)
   const clips = useMemo(() => {
