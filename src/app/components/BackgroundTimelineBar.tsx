@@ -48,7 +48,7 @@ interface DiffClip {
 }
 
 // ── Mock diff data ─────────────────────────────────────────────────
-const MOCK_DIFF_CLIPS: DiffClip[] = [
+export const MOCK_DIFF_CLIPS: DiffClip[] = [
   { id: 0, title: "Clip 1", color: "blue",   width: 168, diffs: [{ type: 'deletion', startFraction: 0.6, endFraction: 0.85 }] },
   { id: 1, title: "Clip 2", color: "purple", width: 440, diffs: [{ type: 'addition', startFraction: 0.1, endFraction: 0.3 }, { type: 'deletion', startFraction: 0.7, endFraction: 0.9 }] },
   { id: 2, title: "Clip 3", color: "green",  width: 560, diffs: [{ type: 'addition', startFraction: 0.4, endFraction: 0.55 }] },

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback, useLayoutEffect } from 'react';
 import { motion } from 'motion/react';
-import { Workflow } from 'lucide-react';
+import { Workflow, Undo2, RefreshCw } from 'lucide-react';
 import svgPaths from "@/imports/svg-mbvhuxpq3m";
 interface Clip {
   id: number;
@@ -34,9 +34,12 @@ interface JumpCutTimelineProps {
   onToggleNodeView?: () => void;
   onHoverTimeChange?: (time: number | null) => void;
   onHoverFractionChange?: (fraction: number | null) => void;
+  cutsAccepted?: boolean;
+  onUndoCuts?: () => void;
+  onRefreshCuts?: () => void;
 }
 
-export function JumpCutTimeline({ onCutsChange, durations, clipTrimStart, clipTrimEnd, onTrimChange, playheadTime, onPlayheadTimeChange, isNodeViewOpen = false, onToggleNodeView, onHoverTimeChange, onHoverFractionChange }: JumpCutTimelineProps) {
+export function JumpCutTimeline({ onCutsChange, durations, clipTrimStart, clipTrimEnd, onTrimChange, playheadTime, onPlayheadTimeChange, isNodeViewOpen = false, onToggleNodeView, onHoverTimeChange, onHoverFractionChange, cutsAccepted = false, onUndoCuts, onRefreshCuts }: JumpCutTimelineProps) {
   const [currentCutIndex, setCurrentCutIndex] = useState(0);
   const [showPreview, setShowPreview] = useState(false);
   const [completedCuts, setCompletedCuts] = useState<number[]>([]);
@@ -503,16 +506,36 @@ export function JumpCutTimeline({ onCutsChange, durations, clipTrimStart, clipTr
       onTouchCancel={handleTouchEnd}
       style={{ touchAction: 'pan-x pinch-zoom' }}
     >
-      {/* Canvas / workflow view button – top-right of timeline */}
-      {onToggleNodeView && (
-        <button
-          onClick={onToggleNodeView}
-          className="absolute top-2 right-2 z-40 w-8 h-8 flex items-center justify-center rounded bg-[#25252a] hover:bg-[#323436] transition-colors text-[#bcbcbe] hover:text-white cursor-pointer"
-          title="Workflow / Canvas view"
-        >
-          <Workflow className="size-4" />
-        </button>
-      )}
+      {/* Top-right buttons: Undo, Refresh, Workflow */}
+      <div className="absolute top-2 right-2 z-40 flex items-center gap-1">
+        {cutsAccepted && onUndoCuts && (
+          <button
+            onClick={onUndoCuts}
+            className="w-8 h-8 flex items-center justify-center rounded bg-[#25252a] hover:bg-[#323436] transition-colors text-[#bcbcbe] hover:text-white cursor-pointer"
+            title="Undo cuts"
+          >
+            <Undo2 className="size-4" />
+          </button>
+        )}
+        {cutsAccepted && onRefreshCuts && (
+          <button
+            onClick={onRefreshCuts}
+            className="w-8 h-8 flex items-center justify-center rounded bg-[#25252a] hover:bg-[#323436] transition-colors text-[#bcbcbe] hover:text-white cursor-pointer"
+            title="Refresh cuts"
+          >
+            <RefreshCw className="size-4" />
+          </button>
+        )}
+        {onToggleNodeView && (
+          <button
+            onClick={onToggleNodeView}
+            className="w-8 h-8 flex items-center justify-center rounded bg-[#25252a] hover:bg-[#323436] transition-colors text-[#bcbcbe] hover:text-white cursor-pointer"
+            title="Workflow / Canvas view"
+          >
+            <Workflow className="size-4" />
+          </button>
+        )}
+      </div>
 
       <div className="relative h-full" style={{ minWidth: totalWidthPx }} ref={timelineRef}>
         {/* Timeline rulers – actual time */}
@@ -734,6 +757,7 @@ function VideoClip({ clipId, left, width, title, color, isNodeViewOpen = false, 
           left: `${left}px`,
           width: `${width}px`,
           bottom: `${bottom}px`,
+          transition: 'left 0.4s ease, width 0.4s ease',
         }}
       >
         <motion.div
@@ -1097,7 +1121,7 @@ function ScriptSegment({ left, width, text, highlightPosition, showEndCutPreview
     <div
       ref={containerRef}
       className="absolute bottom-[24px] h-[34px] overflow-hidden rounded border border-[#353535] bg-[#2a2a2e]"
-      style={{ left: `${left}px`, width: `${width}px` }}
+      style={{ left: `${left}px`, width: `${width}px`, transition: 'left 0.4s ease, width 0.4s ease' }}
     >
       {/* Cut preview: dotted line and ghosted section (script track = video clips) */}
       {showEndCutPreview && endCutPosition != null && (
