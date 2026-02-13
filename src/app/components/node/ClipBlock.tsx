@@ -1,13 +1,12 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo, useLayoutEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Film } from "lucide-react";
 import { cn } from "@/app/components/ui/utils";
-import { CLIP_COLORS } from "@/app/types/nodeEffects";
 
 interface ClipBlockProps {
   clipId: number;
   title: string;
-  color: "blue" | "purple" | "green" | "orange" | "teal";
+  color?: "blue" | "purple" | "green" | "orange" | "teal";
   videoSrc: string;
   trimStart: number;
   trimEnd: number;
@@ -24,6 +23,8 @@ interface ClipBlockProps {
   /** Time (sec) within this clip segment for the ghost playhead when hovering. */
   hoverPreviewTimeInClip?: number;
   layoutId?: string;
+  transcript?: string;
+  titleOverlay?: string;
 }
 
 export function ClipBlock({
@@ -41,12 +42,16 @@ export function ClipBlock({
   activePlayheadTimeInClip,
   hoverPreviewTimeInClip,
   layoutId,
+  transcript,
+  titleOverlay,
 }: ClipBlockProps) {
   const [localHovered, setLocalHovered] = useState(false);
   const previewRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const stripRef = useRef<HTMLDivElement>(null);
+  const wordEls = useRef<Map<number, HTMLSpanElement>>(new Map());
   const hovered = isHovered || localHovered;
-  const colors = CLIP_COLORS[color];
 
   const segmentDuration = Math.max(0, trimEnd - trimStart);
   const currentTime = segmentDuration > 0 ? trimStart + Math.min(previewTime, segmentDuration) : trimStart;
@@ -78,6 +83,73 @@ export function ClipBlock({
     onSeekAndPlay?.();
   };
 
+  // Word-highlighting logic
+  const words = useMemo(() => transcript?.split(" ") ?? [], [transcript]);
+  const wordPositions = useMemo(() => {
+    if (!transcript) return [];
+    const totalChars = transcript.length;
+    let charOffset = 0;
+    return words.map((word) => {
+      const wordStart = charOffset;
+      const wordEnd = charOffset + word.length;
+      charOffset = wordEnd + 1;
+      return { fracMid: (wordStart + wordEnd) / 2 / totalChars };
+    });
+  }, [words, transcript]);
+
+  const scrubFraction =
+    segmentDuration > 0 && hoverPreviewTimeInClip != null
+      ? hoverPreviewTimeInClip / segmentDuration
+      : -1;
+
+  const highlightedWordIndex = useMemo(() => {
+    if (scrubFraction < 0 || wordPositions.length === 0) return -1;
+    let closest = 0;
+    let closestDist = Infinity;
+    for (let i = 0; i < wordPositions.length; i++) {
+      const dist = Math.abs(scrubFraction - wordPositions[i].fracMid);
+      if (dist < closestDist) {
+        closestDist = dist;
+        closest = i;
+      }
+    }
+    return closest;
+  }, [scrubFraction, wordPositions]);
+
+  const setWordRef = useCallback(
+    (index: number) => (el: HTMLSpanElement | null) => {
+      if (el) wordEls.current.set(index, el);
+      else wordEls.current.delete(index);
+    },
+    []
+  );
+
+  // Scroll to keep highlighted word centered
+  useLayoutEffect(() => {
+    const scrollEl = scrollRef.current;
+    const stripEl = stripRef.current;
+    if (!scrollEl || !stripEl || highlightedWordIndex < 0) {
+      if (scrollEl) scrollEl.style.transform = "translateX(0)";
+      return;
+    }
+    const available = stripEl.clientWidth;
+    const contentWidth = scrollEl.scrollWidth;
+    const wordEl = wordEls.current.get(highlightedWordIndex);
+    if (!wordEl) return;
+
+    const wordCenter = wordEl.offsetLeft + wordEl.offsetWidth / 2;
+    let target = available / 2 - wordCenter;
+    if (contentWidth <= available) {
+      target = 0;
+    } else {
+      const minTranslate = -(contentWidth - available);
+      target = Math.max(minTranslate, Math.min(0, target));
+    }
+    scrollEl.style.transform = `translateX(${target}px)`;
+  }, [highlightedWordIndex]);
+
+  const hasTranscript = transcript && words.length > 0;
+
   return (
     <motion.div
       layoutId={layoutId}
@@ -94,12 +166,6 @@ export function ClipBlock({
         onHover?.(false);
       }}
     >
-      {/* Color accent bar */}
-      <div
-        className="h-[3px] w-full"
-        style={{ backgroundColor: colors.accent }}
-      />
-
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-2.5">
         <p className="text-[13px] font-medium text-white/90 truncate flex-1 mr-2">
@@ -147,9 +213,19 @@ export function ClipBlock({
             style={{ left: `${playheadLeftPercent}%`, transform: "translateX(-50%)" }}
           />
         )}
+        {/* Title overlay — lower-third card */}
+        {titleOverlay && (
+          <div className="absolute bottom-3 left-3 max-w-[75%] pointer-events-none z-10">
+            <div className="bg-black/60 backdrop-blur-sm px-3 py-1.5 rounded-lg">
+              <span className="text-[14px] font-semibold text-white leading-tight">
+                {titleOverlay}
+              </span>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Hover prompt */}
+      {/* Word-highlighting script strip */}
       <AnimatePresence>
         {hovered && (
           <motion.div
@@ -159,12 +235,56 @@ export function ClipBlock({
             transition={{ duration: 0.2 }}
             className="overflow-hidden"
           >
-            <div className="px-4 pb-3 pt-1">
-              <p className="text-[11px] text-white/30 mb-1">Source clip</p>
-              <p className="text-[12px] text-white/50 italic">
-                Hover to scrub · Click to play from here
-              </p>
-            </div>
+            {hasTranscript ? (
+              <div
+                ref={stripRef}
+                className="mx-3 mb-3 mt-1 h-[34px] overflow-hidden rounded border border-[#353535] bg-[#2a2a2e] flex items-center px-2"
+              >
+                <div
+                  ref={scrollRef}
+                  className="flex items-center gap-[0.35em] whitespace-nowrap"
+                  style={{ transition: "transform 120ms ease-out" }}
+                >
+                  {words.map((word, i) => {
+                    const isActive = i === highlightedWordIndex;
+                    const content = (
+                      <span
+                        style={{
+                          fontFamily: "Inter, sans-serif",
+                          fontSize: "13px",
+                          color: isActive ? "#fff" : "#888",
+                          fontWeight: isActive ? 500 : 400,
+                          transition: "color 100ms",
+                        }}
+                      >
+                        {word}
+                      </span>
+                    );
+                    return isActive ? (
+                      <span
+                        key={i}
+                        ref={setWordRef(i)}
+                        className="rounded px-1.5 py-0.5 border transition-colors"
+                        style={{ backgroundColor: "#1f1f1f", borderColor: "#353535" }}
+                      >
+                        {content}
+                      </span>
+                    ) : (
+                      <span key={i} ref={setWordRef(i)}>
+                        {content}
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div className="px-4 pb-3 pt-1">
+                <p className="text-[11px] text-white/30 mb-1">Source clip</p>
+                <p className="text-[12px] text-white/50 italic">
+                  Hover to scrub · Click to play from here
+                </p>
+              </div>
+            )}
           </motion.div>
         )}
       </AnimatePresence>

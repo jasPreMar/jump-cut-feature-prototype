@@ -119,6 +119,16 @@
   --color-sidebar-ring: var(--sidebar-ring);
 }
 
+@keyframes subtle-pulse {
+  0%, 100% { background-color: #2a2a2a; }
+  50% { background-color: #232323; }
+}
+
+@keyframes aqua-stripe-scroll {
+  0% { background-position: 0 0; }
+  100% { background-position: 12px 0; }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

@@ -4,6 +4,7 @@ import { VideoEditor } from "@/app/components/VideoEditor";
 import { JumpCutTimeline } from "@/app/components/JumpCutTimeline";
 import { NodeCanvas } from "@/app/components/NodeCanvas";
 import { FloatingPIP } from "@/app/components/FloatingPIP";
+import { BackgroundTimelineBar } from "@/app/components/BackgroundTimelineBar";
 import type { EffectBlock } from "@/app/types/nodeEffects";
 
 const sheetTransition = { duration: 1, ease: [0.42, 0, 0.58, 1] };
@@ -18,6 +19,7 @@ export default function App() {
   const [clipTrimStart, setClipTrimStart] = useState<number[]>(Array(8).fill(0)); // start time (sec) within each clip
   const [clipTrimEnd, setClipTrimEnd] = useState<number[]>(Array(8).fill(0)); // end time (sec) within each clip
   const [isPlaying, setIsPlaying] = useState(false);
+  const [hoverFraction, setHoverFraction] = useState<number | null>(null);
 
   // When durations load, set trim end to duration only when not yet set (don’t overwrite user cuts)
   useEffect(() => {
@@ -81,6 +83,15 @@ export default function App() {
             onPlayPause={handlePlayPause}
           />
         </div>
+        <BackgroundTimelineBar
+          isActive={!isNodeViewOpen}
+          stepName="Generating cuts"
+          onStop={() => {}}
+          onAccept={() => {}}
+          onReject={() => {}}
+          isTimelineHovered={hoverPreviewTime !== null}
+          hoverFraction={hoverFraction}
+        />
         <motion.div
           className="shrink-0 relative w-full overflow-hidden"
           initial={{ height: 200 }}
@@ -146,6 +157,7 @@ export default function App() {
                   playheadTime={playheadTime}
                   onPlayheadTimeChange={setPlayheadTime}
                   onHoverTimeChange={setHoverPreviewTime}
+                  onHoverFractionChange={setHoverFraction}
                   isNodeViewOpen={isNodeViewOpen}
                   onToggleNodeView={handleToggleNodeView}
                 />

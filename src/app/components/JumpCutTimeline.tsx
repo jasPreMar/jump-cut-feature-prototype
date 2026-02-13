@@ -33,9 +33,10 @@ interface JumpCutTimelineProps {
   isNodeViewOpen?: boolean;
   onToggleNodeView?: () => void;
   onHoverTimeChange?: (time: number | null) => void;
+  onHoverFractionChange?: (fraction: number | null) => void;
 }
 
-export function JumpCutTimeline({ onCutsChange, durations, clipTrimStart, clipTrimEnd, onTrimChange, playheadTime, onPlayheadTimeChange, isNodeViewOpen = false, onToggleNodeView, onHoverTimeChange }: JumpCutTimelineProps) {
+export function JumpCutTimeline({ onCutsChange, durations, clipTrimStart, clipTrimEnd, onTrimChange, playheadTime, onPlayheadTimeChange, isNodeViewOpen = false, onToggleNodeView, onHoverTimeChange, onHoverFractionChange }: JumpCutTimelineProps) {
   const [currentCutIndex, setCurrentCutIndex] = useState(0);
   const [showPreview, setShowPreview] = useState(false);
   const [completedCuts, setCompletedCuts] = useState<number[]>([]);
@@ -622,10 +623,12 @@ export function JumpCutTimeline({ onCutsChange, durations, clipTrimStart, clipTr
             const px = Math.round(x);
             setHoveredPosition(px);
             onHoverTimeChange?.(pixelToTime(px));
+            onHoverFractionChange?.(totalWidthPx > 0 ? px / totalWidthPx : null);
           }}
           onMouseLeave={() => {
             setHoveredPosition(null);
             onHoverTimeChange?.(null);
+            onHoverFractionChange?.(null);
           }}
           onClick={() => {
             setTimelineClickedOnce(true);
