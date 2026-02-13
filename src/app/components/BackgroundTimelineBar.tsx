@@ -203,7 +203,7 @@ export function BackgroundTimelineBar({
           onMouseLeave={() => setIsBarHovered(false)}
         >
           <div
-            className="mx-3 h-full rounded-t-lg flex flex-col"
+            className="mx-3 h-full rounded-t-lg flex flex-col justify-end"
             style={{
               backgroundColor: "#1e1e1e",
               transform: isExpanded ? "scale(0.99)" : "scale(0.985)",
@@ -212,7 +212,49 @@ export function BackgroundTimelineBar({
               transition: "transform 0.3s ease",
             }}
           >
-            {/* Top row: header (32px) */}
+            {/* Top area: diff timeline (only when expanded) */}
+            {isExpanded && (
+              <div
+                className="flex-1 overflow-x-auto overflow-y-clip"
+                style={{
+                  backgroundColor: '#171717',
+                  borderBottom: '1px solid #25272b',
+                }}
+              >
+                <div
+                  className="relative h-full"
+                  style={{ minWidth: `${totalWidth}px` }}
+                >
+                  {/* 3 track backgrounds */}
+                  {[22, 65, 107].map((bottom) => (
+                    <div
+                      key={bottom}
+                      className="absolute left-0 right-0 h-[36px]"
+                      style={{
+                        bottom: `${bottom}px`,
+                        backgroundColor: '#201f22',
+                        border: '1px solid #282829',
+                      }}
+                    />
+                  ))}
+
+                  {/* Clips on bottom track */}
+                  {clipLayouts.map((clip) => (
+                    <DiffClipBlock key={clip.id} clip={clip} left={clip.left} />
+                  ))}
+
+                  {/* Ghost playhead mirrored from main timeline */}
+                  {playheadX != null && (
+                    <div
+                      className="absolute bottom-0 top-0 w-0.5 bg-white/30 pointer-events-none z-10"
+                      style={{ left: `${playheadX}px`, transform: 'translateX(-50%)' }}
+                    />
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Bottom row: header (32px) — stays pinned at bottom */}
             <div
               className="flex items-center gap-2 px-3 shrink-0"
               style={{ height: '32px' }}
@@ -289,48 +331,6 @@ export function BackgroundTimelineBar({
                 </button>
               )}
             </div>
-
-            {/* Bottom area: diff timeline (only when expanded) */}
-            {isExpanded && (
-              <div
-                className="flex-1 overflow-x-auto overflow-y-clip"
-                style={{
-                  backgroundColor: '#171717',
-                  borderTop: '1px solid #25272b',
-                }}
-              >
-                <div
-                  className="relative h-full"
-                  style={{ minWidth: `${totalWidth}px` }}
-                >
-                  {/* 3 track backgrounds */}
-                  {[22, 65, 107].map((bottom) => (
-                    <div
-                      key={bottom}
-                      className="absolute left-0 right-0 h-[36px]"
-                      style={{
-                        bottom: `${bottom}px`,
-                        backgroundColor: '#201f22',
-                        border: '1px solid #282829',
-                      }}
-                    />
-                  ))}
-
-                  {/* Clips on bottom track */}
-                  {clipLayouts.map((clip) => (
-                    <DiffClipBlock key={clip.id} clip={clip} left={clip.left} />
-                  ))}
-
-                  {/* Ghost playhead mirrored from main timeline */}
-                  {playheadX != null && (
-                    <div
-                      className="absolute bottom-0 top-0 w-0.5 bg-white/30 pointer-events-none z-10"
-                      style={{ left: `${playheadX}px`, transform: 'translateX(-50%)' }}
-                    />
-                  )}
-                </div>
-              </div>
-            )}
           </div>
         </motion.div>
       )}
