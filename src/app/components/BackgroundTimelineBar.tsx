@@ -14,7 +14,7 @@ const STEP_INTERVAL_MS = 10_000; // change step every 10s
 const TICK_MS = 60; // progress tick interval
 
 // ── Clip colors (matches JumpCutTimeline.tsx:716-721) ──────────────
-const CLIP_COLORS = {
+export const CLIP_COLORS = {
   blue:   { bg: '#1c77e9', border: '#6298ec' },
   purple: { bg: '#564aac', border: '#9287e2' },
   green:  { bg: '#2d8659', border: '#5fb885' },
@@ -29,17 +29,17 @@ const MARGIN = 16;
 const GAP = 10;
 
 // Grey clip colors for the diff timeline (muted so diff stripes pop)
-const GREY_BG = '#2e2e30';
-const GREY_BORDER = '#444446';
+export const GREY_BG = '#2e2e30';
+export const GREY_BORDER = '#444446';
 
 // ── Diff region types ──────────────────────────────────────────────
-interface DiffRegion {
+export interface DiffRegion {
   type: 'addition' | 'deletion';
   startFraction: number; // 0–1 within clip
   endFraction: number;
 }
 
-interface DiffClip {
+export interface DiffClip {
   id: number;
   title: string;
   color: ClipColor;

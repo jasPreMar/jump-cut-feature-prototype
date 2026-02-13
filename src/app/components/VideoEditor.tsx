@@ -1,11 +1,33 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { Type, Voicemail, Maximize, Pause, EllipsisVertical } from "lucide-react";
+import { motion, AnimatePresence } from "motion/react";
+import { Type, Voicemail, Maximize, Pause, EllipsisVertical, Sparkles, Scissors, Check } from "lucide-react";
 import svgPaths from "@/imports/svg-mbvhuxpq3m";
 import image1 from "../../assets/4ade86ef9dac706bb3957bd6282d330df1e57c89.png";
 import image2 from "../../assets/c4945bd878c904a44e42b756d4a58bd0d542132d.png";
 import image3 from "../../assets/7633c3f223e4bc39f692ecfd0b163fb92cb5ad4e.png";
 import image4 from "../../assets/fdac420adeb4e37cb6c0fc58ae2eaac15892ec6c.png";
 import { VIDEO_SOURCES } from "@/app/constants/videos";
+import { MOCK_DIFF_CLIPS, CLIP_COLORS, GREY_BG } from "@/app/components/BackgroundTimelineBar";
+
+// ── Agent event types & scripted timeline ─────────────────────────
+type AgentEvent =
+  | { type: "text"; id: number; icon: "sparkles" | "scissors" | "check"; text: string }
+  | { type: "card"; id: number; clipIndex: number };
+
+const AGENT_EVENT_SCRIPT: { delayMs: number; event: Omit<AgentEvent, "id"> }[] = [
+  { delayMs: 1500,  event: { type: "text", icon: "sparkles", text: "Analyzing clips..." } },
+  { delayMs: 4000,  event: { type: "text", icon: "scissors", text: "Cutting Clip 1 (0:42–0:44)..." } },
+  { delayMs: 6000,  event: { type: "card", clipIndex: 0 } },
+  { delayMs: 9000,  event: { type: "text", icon: "sparkles", text: "Evaluating transitions..." } },
+  { delayMs: 13000, event: { type: "text", icon: "scissors", text: "Cutting Clip 5 (1:23–1:26)..." } },
+  { delayMs: 15500, event: { type: "card", clipIndex: 4 } },
+  { delayMs: 19000, event: { type: "text", icon: "sparkles", text: "Optimizing pacing..." } },
+  { delayMs: 25000, event: { type: "text", icon: "scissors", text: "Cutting Clip 7 (2:01–2:05)..." } },
+  { delayMs: 28000, event: { type: "card", clipIndex: 6 } },
+  { delayMs: 35000, event: { type: "text", icon: "sparkles", text: "Processing audio alignment..." } },
+  { delayMs: 50000, event: { type: "text", icon: "sparkles", text: "Polishing final sequence..." } },
+  { delayMs: 65000, event: { type: "text", icon: "check",    text: "Edits ready for review" } },
+];
 
 export function VideoEditor({
   completedCuts,
@@ -18,6 +40,8 @@ export function VideoEditor({
   clipTrimEnd,
   isPlaying,
   onPlayPause,
+  onChatSend,
+  isGenerating,
 }: {
   completedCuts: number[];
   playheadTime: number;
@@ -29,10 +53,12 @@ export function VideoEditor({
   clipTrimEnd: number[];
   isPlaying: boolean;
   onPlayPause: () => void;
+  onChatSend?: () => void;
+  isGenerating?: boolean;
 }) {
   return (
     <div className="flex h-full items-stretch gap-3 p-3 overflow-hidden">
-      <ChatPanel />
+      <ChatPanel onSend={onChatSend} isGenerating={isGenerating} />
       <VideoPreview
         completedCuts={completedCuts}
         playheadTime={playheadTime}
@@ -56,7 +82,7 @@ interface ChatMessage {
   actions?: { label: string }[];
 }
 
-function ChatPanel() {
+function ChatPanel({ onSend, isGenerating }: { onSend?: () => void; isGenerating?: boolean }) {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 1,
@@ -76,12 +102,41 @@ function ChatPanel() {
   ]);
   const [inputValue, setInputValue] = useState("");
   const [chatVisible, setChatVisible] = useState(true);
+  const [agentEvents, setAgentEvents] = useState<AgentEvent[]>([]);
+  const eventTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // Schedule agent events when generating starts; clear when it stops
+  useEffect(() => {
+    if (isGenerating) {
+      setAgentEvents([]);
+      // Clear any pending timers from a previous run
+      eventTimersRef.current.forEach(clearTimeout);
+      eventTimersRef.current = [];
+
+      let nextId = 0;
+      AGENT_EVENT_SCRIPT.forEach(({ delayMs, event }) => {
+        const timer = setTimeout(() => {
+          const id = nextId++;
+          setAgentEvents((prev) => [...prev, { ...event, id } as AgentEvent]);
+        }, delayMs);
+        eventTimersRef.current.push(timer);
+      });
+    } else {
+      // Stop streaming — clear pending timers but keep existing events visible
+      eventTimersRef.current.forEach(clearTimeout);
+      eventTimersRef.current = [];
+    }
+    return () => {
+      eventTimersRef.current.forEach(clearTimeout);
+      eventTimersRef.current = [];
+    };
+  }, [isGenerating]);
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, agentEvents]);
 
   const handleSend = () => {
     const trimmed = inputValue.trim();
@@ -104,6 +159,7 @@ function ChatPanel() {
       },
     ]);
     setInputValue("");
+    onSend?.();
 
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
@@ -210,6 +266,30 @@ function ChatPanel() {
               )}
             </div>
           ))}
+
+          {/* Agent events stream */}
+          <AnimatePresence>
+            {agentEvents.map((event, idx) => (
+              <motion.div
+                key={event.id}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.2 }}
+              >
+                {event.type === "text" ? (
+                  <AgentTextEvent
+                    icon={event.icon}
+                    text={event.text}
+                    isLast={idx === agentEvents.length - 1}
+                    isGenerating={!!isGenerating}
+                  />
+                ) : (
+                  <MiniDiffCard clipIndex={event.clipIndex} />
+                )}
+              </motion.div>
+            ))}
+          </AnimatePresence>
+
           <div ref={messagesEndRef} />
         </div>
       </div>
@@ -264,6 +344,106 @@ function ChatPanel() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── Agent text event row ────────────────────────────────────────────
+function AgentTextEvent({
+  icon,
+  text,
+  isLast,
+  isGenerating,
+}: {
+  icon: "sparkles" | "scissors" | "check";
+  text: string;
+  isLast: boolean;
+  isGenerating: boolean;
+}) {
+  const IconComponent = icon === "sparkles" ? Sparkles : icon === "scissors" ? Scissors : Check;
+  const iconColor = icon === "check" ? "#22c55e" : "#888";
+  const shouldPulse = isLast && isGenerating && icon !== "check";
+
+  return (
+    <div className="flex items-center gap-2 py-0.5">
+      <IconComponent
+        size={12}
+        style={{
+          color: iconColor,
+          flexShrink: 0,
+          animation: shouldPulse ? "agent-icon-pulse 1.5s ease-in-out infinite" : undefined,
+        }}
+      />
+      <span className="text-[12px] text-[#888]">{text}</span>
+    </div>
+  );
+}
+
+// ── Mini diff card (timeline snippet) ──────────────────────────────
+function MiniDiffCard({ clipIndex }: { clipIndex: number }) {
+  const clip = MOCK_DIFF_CLIPS[clipIndex];
+  if (!clip) return null;
+
+  // Fake time ruler labels based on clip position
+  const rulerLabels = Array.from({ length: 5 }, (_, i) => {
+    const secs = clipIndex * 20 + i * 5;
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${m}:${s.toString().padStart(2, "0")}`;
+  });
+
+  return (
+    <div
+      className="rounded-lg border border-[#2a2a2a] bg-[#171717] overflow-hidden"
+      style={{ width: 296 }}
+    >
+      {/* Time ruler */}
+      <div className="flex items-center justify-between px-3 pt-1.5 pb-0.5">
+        {rulerLabels.map((label, i) => (
+          <span key={i} className="text-[10px] text-[#555]">{label}</span>
+        ))}
+      </div>
+
+      {/* Clip bar */}
+      <div className="mx-2 h-[28px] relative overflow-hidden" style={{ backgroundColor: GREY_BG }}>
+        {/* Diff overlays */}
+        {clip.diffs.map((diff, i) => {
+          const leftPct = diff.startFraction * 100;
+          const widthPct = (diff.endFraction - diff.startFraction) * 100;
+          const isDeletion = diff.type === "deletion";
+
+          return (
+            <div
+              key={i}
+              className="absolute inset-y-0"
+              style={{
+                left: `${leftPct}%`,
+                width: `${widthPct}%`,
+                backgroundColor: isDeletion
+                  ? "rgba(239,68,68,0.15)"
+                  : "rgba(34,197,94,0.15)",
+                backgroundImage: isDeletion
+                  ? "repeating-linear-gradient(-45deg, transparent 0px 3px, rgba(239,68,68,0.35) 3px 6px)"
+                  : "repeating-linear-gradient(-45deg, transparent 0px 3px, rgba(34,197,94,0.35) 3px 6px)",
+              }}
+            />
+          );
+        })}
+
+        {/* Clip title */}
+        <div className="flex items-center px-2 h-full relative z-10">
+          <p className="text-[11px] text-white/50 font-medium whitespace-nowrap">{clip.title}</p>
+        </div>
+      </div>
+
+      {/* Muted second track */}
+      <div
+        className="mx-2 mt-1 mb-2 h-[16px]"
+        style={{
+          backgroundColor: "#1a1a1c",
+          border: "1px solid #282829",
+        }}
+      />
     </div>
   );
 }

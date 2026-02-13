@@ -9,6 +9,9 @@ import type { EffectBlock } from "@/app/types/nodeEffects";
 
 const sheetTransition = { duration: 1, ease: [0.42, 0, 0.58, 1] };
 
+// Total fraction of each clip removed by deletions (from MOCK_DIFF_CLIPS)
+const DELETION_FRACTIONS = [0.25, 0.20, 0, 0, 0.15, 0, 0.30, 0.20];
+
 export default function App() {
   const [completedCuts, setCompletedCuts] = useState<number[]>([]);
   const [isNodeViewOpen, setIsNodeViewOpen] = useState(false);
@@ -20,6 +23,9 @@ export default function App() {
   const [clipTrimEnd, setClipTrimEnd] = useState<number[]>(Array(8).fill(0)); // end time (sec) within each clip
   const [isPlaying, setIsPlaying] = useState(false);
   const [hoverFraction, setHoverFraction] = useState<number | null>(null);
+  const [cutsAccepted, setCutsAccepted] = useState(false);
+  const [preMergeTrimEnd, setPreMergeTrimEnd] = useState<number[]>([]);
+  const [chatMessageSent, setChatMessageSent] = useState(false);
 
   // When durations load, set trim end to duration only when not yet set (don’t overwrite user cuts)
   useEffect(() => {
@@ -66,6 +72,42 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [handlePlayPause]);
 
+  const handleAcceptCuts = useCallback(() => {
+    setPreMergeTrimEnd([...clipTrimEnd]);
+    setClipTrimEnd((prev) => {
+      const next = [...prev];
+      for (let i = 0; i < 8; i++) {
+        const frac = DELETION_FRACTIONS[i];
+        if (frac > 0) {
+          const effectiveDur = next[i] - clipTrimStart[i];
+          next[i] = next[i] - frac * effectiveDur;
+        }
+      }
+      return next;
+    });
+    setCutsAccepted(true);
+  }, [clipTrimEnd, clipTrimStart]);
+
+  const handleRejectCuts = useCallback(() => {
+    setCutsAccepted(true);
+  }, []);
+
+  const handleUndoCuts = useCallback(() => {
+    if (preMergeTrimEnd.length > 0) {
+      setClipTrimEnd(preMergeTrimEnd);
+    }
+    setCutsAccepted(false);
+  }, [preMergeTrimEnd]);
+
+  const handleRefreshCuts = useCallback(() => {
+    if (preMergeTrimEnd.length > 0) {
+      setClipTrimEnd(preMergeTrimEnd);
+    }
+    setCutsAccepted(false);
+  }, [preMergeTrimEnd]);
+
+  const isGenerating = chatMessageSent && !cutsAccepted;
+
   return (
     <LayoutGroup>
       <div className="bg-[#0e1015] flex flex-col h-screen w-full overflow-hidden">
@@ -81,14 +123,16 @@ export default function App() {
             clipTrimEnd={clipTrimEnd}
             isPlaying={isPlaying}
             onPlayPause={handlePlayPause}
+            onChatSend={() => setChatMessageSent(true)}
+            isGenerating={isGenerating}
           />
         </div>
         <BackgroundTimelineBar
-          isActive={!isNodeViewOpen}
+          isActive={chatMessageSent && !isNodeViewOpen && !cutsAccepted}
           stepName="Generating cuts"
           onStop={() => {}}
-          onAccept={() => {}}
-          onReject={() => {}}
+          onAccept={handleAcceptCuts}
+          onReject={handleRejectCuts}
           isTimelineHovered={hoverPreviewTime !== null}
           hoverFraction={hoverFraction}
         />
@@ -160,6 +204,9 @@ export default function App() {
                   onHoverFractionChange={setHoverFraction}
                   isNodeViewOpen={isNodeViewOpen}
                   onToggleNodeView={handleToggleNodeView}
+                  cutsAccepted={cutsAccepted}
+                  onUndoCuts={handleUndoCuts}
+                  onRefreshCuts={handleRefreshCuts}
                 />
               </motion.div>
             )}
